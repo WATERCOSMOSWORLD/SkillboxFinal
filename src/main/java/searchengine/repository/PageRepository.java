@@ -34,4 +34,6 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
     boolean existsByPath(String path);
 
+
+    int countBySiteUrl(String siteUrl);
 }
