@@ -38,14 +38,15 @@ public class ApiController {
         this.searchService = searchService;
     }
 
+
+
     @GetMapping("/statistics")
     public ResponseEntity<StatisticsResponse> statistics() {
-        // Получаем статистику через сервис
         StatisticsResponse statistics = statisticsService.getStatistics();
-
-        // Возвращаем статистику в ответе
         return ResponseEntity.ok(statistics);
     }
+
+
 
     @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
