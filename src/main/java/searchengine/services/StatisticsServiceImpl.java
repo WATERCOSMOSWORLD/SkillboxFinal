@@ -8,8 +8,12 @@ import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.statistics.TotalStatistics;
 import searchengine.config.ConfigSite;
+import searchengine.model.Site;
+import searchengine.model.IndexingStatus;
 import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
+import searchengine.repository.SiteRepository;
+
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.web.client.RestTemplate;
@@ -21,7 +25,9 @@ public class StatisticsServiceImpl implements StatisticsService {
     private final SitesList sites;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
+    private final SiteRepository siteRepository;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final IndexingService indexingService;
 
     @Override
     public StatisticsResponse getStatistics() {
@@ -29,26 +35,34 @@ public class StatisticsServiceImpl implements StatisticsService {
         total.setSites(sites.getSites().size());
         total.setPages(0);
         total.setLemmas(0);
-        total.setIndexing(true);
+        total.setIndexing(indexingService.isIndexingInProgress());
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
 
-        for (ConfigSite site : sites.getSites()) {
+        for (ConfigSite siteConfig : sites.getSites()) {
             DetailedStatisticsItem item = new DetailedStatisticsItem();
-            item.setName(site.getName());
-            item.setUrl(site.getUrl());
+            item.setName(siteConfig.getName());
+            item.setUrl(siteConfig.getUrl());
 
-            boolean isAvailable = checkSiteAvailability(site.getUrl());
-            String status = isAvailable ? "INDEXED" : "FAILED";
-            item.setStatus(status);
+            Site site = siteRepository.findByUrl(siteConfig.getUrl());
 
-            if (!isAvailable) {
-                item.setError("Ошибка индексации: сайт не доступен");
+            if (site != null) {
+                if (indexingService.isSiteIndexing(siteConfig.getUrl())) {
+                    item.setStatus("INDEXING");
+                } else {
+                    item.setStatus(site.getStatus().toString());
+                }
+
+                if (site.getStatus() == IndexingStatus.FAILED) {
+                    item.setError(site.getLastError());
+                }
+            } else {
+                item.setStatus("FAILED");
+                item.setError("Сайт отсутствует в базе данных");
             }
 
-            int pages = pageRepository.countBySiteUrl(site.getUrl());
-            int lemmas = lemmaRepository.countBySiteUrl(site.getUrl());
-
+            int pages = pageRepository.countBySiteUrl(siteConfig.getUrl());
+            int lemmas = lemmaRepository.countBySiteUrl(siteConfig.getUrl());
 
             item.setPages(pages);
             item.setLemmas(lemmas);
@@ -71,12 +85,4 @@ public class StatisticsServiceImpl implements StatisticsService {
         return response;
     }
 
-    private boolean checkSiteAvailability(String url) {
-        try {
-            restTemplate.headForHeaders(url);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 }

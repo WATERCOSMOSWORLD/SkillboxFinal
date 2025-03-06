@@ -17,11 +17,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
+    private final ConcurrentHashMap<String, Boolean> indexingTasks = new ConcurrentHashMap<>();
 
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
@@ -99,6 +101,7 @@ public class IndexingService {
             for (searchengine.config.ConfigSite site : sites) {
                 executorService.submit(() -> {
                     logger.info("Индексация сайта: {} ({})", site.getName(), site.getUrl());
+                    startIndexingForSite(site.getUrl()); // Добавляем сайт в активные задачи
                     try {
                         deleteSiteData(site.getUrl());
                         searchengine.model.Site newSite = new searchengine.model.Site();
@@ -115,6 +118,8 @@ public class IndexingService {
                         }
                     } catch (Exception e) {
                         handleIndexingError(site.getUrl(), e);
+                    } finally {
+                        stopIndexingForSite(site.getUrl()); // Удаляем сайт из активных задач
                     }
                 });
             }
@@ -132,6 +137,7 @@ public class IndexingService {
             }
         }
     }
+
 
     private void crawlAndIndexPages(searchengine.model.Site site, String startUrl) {
         forkJoinPool = new ForkJoinPool();
@@ -208,4 +214,18 @@ public class IndexingService {
             logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), errorMessage);
         }
     }
+
+    private void startIndexingForSite(String url) {
+        indexingTasks.put(url, true);
+    }
+
+    private void stopIndexingForSite(String url) {
+        indexingTasks.remove(url);
+    }
+
+    public boolean isSiteIndexing(String url) {
+        return indexingTasks.getOrDefault(url, false);
+    }
+
+
 }
