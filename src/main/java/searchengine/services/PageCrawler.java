@@ -208,21 +208,19 @@ public class PageCrawler extends RecursiveAction {
     }
 
 
-
-
-
-
     private void processLinks(Document document) {
         Elements links = document.select("a[href]");
         List<PageCrawler> subtasks = new ArrayList<>();
+
         for (Element link : links) {
             if (!checkAndLogStopCondition("При обработке ссылок")) return;
 
             String childUrl = link.absUrl("href");
 
-            // Проверяем, что ссылка принадлежит корневому сайту
+            // Фильтрация: ссылка должна принадлежать корневому сайту из конфига.
+            // Это гарантирует, что обрабатываются только сайты, указанные в конфигурации.
             if (!childUrl.startsWith(site.getUrl())) {
-                logger.debug("Ссылка {} находится за пределами корневого сайта. Пропускаем.", childUrl);
+                logger.debug("Ссылка {} находится за пределами корневого сайта {}. Пропускаем.", childUrl, site.getUrl());
                 continue;
             }
 
@@ -259,6 +257,8 @@ public class PageCrawler extends RecursiveAction {
         }
         invokeAll(subtasks);
     }
+
+
 
     private void savePhoneLink(String telUrl) {
         String phoneNumber = telUrl.substring(4); // Убираем "tel:"

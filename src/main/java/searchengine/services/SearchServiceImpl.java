@@ -8,11 +8,9 @@ import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
 import searchengine.utils.LemmaProcessor;
 import searchengine.model.Page;
-
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import java.util.*;
 
 @Service
 public class SearchServiceImpl implements SearchService {
@@ -21,10 +19,7 @@ public class SearchServiceImpl implements SearchService {
     private final IndexRepository indexRepository;
     private final LemmaProcessor lemmaProcessor;
 
-    public SearchServiceImpl(PageRepository pageRepository,
-                             LemmaRepository lemmaRepository,
-                             IndexRepository indexRepository,
-                             LemmaProcessor lemmaProcessor) {
+    public SearchServiceImpl(PageRepository pageRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository, LemmaProcessor lemmaProcessor) {
         this.pageRepository = pageRepository;
         this.lemmaRepository = lemmaRepository;
         this.indexRepository = indexRepository;
@@ -33,106 +28,109 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public SearchResponse search(String query, String site, int offset, int limit) {
-        // Проверка входного запроса
         if (query == null || query.trim().isEmpty()) {
             return new SearchResponse("Задан пустой поисковый запрос");
         }
 
-        // Извлечение лемм
         List<String> lemmas = lemmaProcessor.extractLemmas(query);
         if (lemmas.isEmpty()) {
             return new SearchResponse("Не удалось обработать запрос");
         }
 
-        // Получение списка страниц по леммам и, возможно, по сайту
-        List<Page> pages;
-        if (site == null || site.isEmpty()) {
-            pages = pageRepository.findPagesByLemmas(lemmas);
-        } else {
-            pages = pageRepository.findPagesByLemmas(lemmas, site);
+        List<Page> pages = (site == null || site.isEmpty())
+                ? pageRepository.findPagesByLemmas(lemmas)
+                : pageRepository.findPagesByLemmas(lemmas, site);
+
+        // Подсчитываем частоту встречаемости каждой леммы
+        Map<String, Integer> lemmaFrequencyMap = new HashMap<>();
+        for (String lemma : lemmas) {
+            int frequency = lemmaRepository.countByLemma(lemma);
+            lemmaFrequencyMap.put(lemma, frequency);
         }
 
-        // Формирование результатов поиска
+        // Формируем результаты поиска
         List<SearchResult> results = pages.stream()
-                .map(page -> new SearchResult(
-                        buildFullUrl(page),
-                        page.getSite().getName(),
-                        page.getPath(),
-                        page.getTitle(),
-                        generateSnippet(page.getContent(), lemmas),
-                        calculateRelevance(page, lemmas)
-                ))
-                .sorted((a, b) -> Double.compare(b.getRelevance(), a.getRelevance()))
+                .map(page -> {
+                    String siteUrl = page.getSite().getUrl();
+                    String siteName = page.getSite().getName();
+                    String pagePath = page.getPath();
+
+                    // Убираем лишний слеш в siteUrl
+                    siteUrl = siteUrl.replaceAll("/$", "");
+                    // Убираем лишний слеш в начале pagePath
+                    pagePath = pagePath.replaceAll("^/", "");
+
+                    String fullUrl = siteUrl + "/" + pagePath;
+
+                    return new SearchResult(
+                            siteUrl,  // Теперь должно корректно передавать сайт
+                            siteName,
+                            "/" + pagePath,  // `uri` должен содержать только путь, а не полный URL
+                            page.getTitle(),
+                            generateSnippet(page.getContent(), lemmas),
+                            calculateRelevance(page, lemmas, lemmaFrequencyMap)
+                    );
+                })
+                .sorted(Comparator.comparingDouble(SearchResult::getRelevance).reversed())
                 .skip(offset)
                 .limit(limit)
                 .collect(Collectors.toList());
 
+
         return new SearchResponse(true, results.size(), results);
     }
 
-
-    private String buildFullUrl(Page page) {
-        String baseUrl = page.getSite().getUrl();
-        String path = page.getPath();
-        if (!path.startsWith("/")) {
-            path = "/" + path;
-        }
-        return baseUrl + path;
-    }
-
-
     private String generateSnippet(String content, List<String> lemmas) {
+        int snippetLength = 200;
         String lowerContent = content.toLowerCase();
-        int minIndex = Integer.MAX_VALUE;
-        int maxIndex = -1;
 
-        // Определяем минимальный и максимальный индексы вхождений всех лемм
+        // Используем TreeMap для сортировки позиций в тексте
+        TreeMap<Integer, String> positions = new TreeMap<>();
         for (String lemma : lemmas) {
-            String lowerLemma = lemma.toLowerCase();
-            int index = lowerContent.indexOf(lowerLemma);
+            int index = lowerContent.indexOf(lemma.toLowerCase());
             while (index != -1) {
-                minIndex = Math.min(minIndex, index);
-                maxIndex = Math.max(maxIndex, index + lowerLemma.length());
-                index = lowerContent.indexOf(lowerLemma, index + 1);
+                positions.put(index, lemma);
+                index = lowerContent.indexOf(lemma.toLowerCase(), index + 1);
             }
         }
 
-        if (maxIndex == -1 || minIndex == Integer.MAX_VALUE) {
+        if (positions.isEmpty()) {
             return "...Совпадений не найдено...";
         }
 
-        // Расширяем диапазон сниппета на 50 символов с каждой стороны
-        int snippetStart = Math.max(minIndex - 50, 0);
-        int snippetEnd = Math.min(maxIndex + 50, content.length());
-        String snippet = content.substring(snippetStart, snippetEnd);
+        // Берем 2-3 фрагмента с наиболее ранними вхождениями
+        StringBuilder snippetBuilder = new StringBuilder();
+        int fragments = 0;
+        for (Map.Entry<Integer, String> entry : positions.entrySet()) {
+            if (fragments >= 3) break;
+            int start = Math.max(entry.getKey() - 50, 0);
+            int end = Math.min(start + snippetLength, content.length());
 
-        // Выделяем найденные совпадения тегом <b>
-        for (String lemma : lemmas) {
-            Pattern pattern = Pattern.compile("(?i)" + Pattern.quote(lemma));
-            Matcher matcher = pattern.matcher(snippet);
-            StringBuffer sb = new StringBuffer();
-            while (matcher.find()) {
-                matcher.appendReplacement(sb, "<b>" + matcher.group() + "</b>");
+            String snippetPart = content.substring(start, end);
+            for (String lemma : lemmas) {
+                snippetPart = snippetPart.replaceAll("(?i)" + lemma, "<b>$0</b>");
             }
-            matcher.appendTail(sb);
-            snippet = sb.toString();
+
+            snippetBuilder.append("...").append(snippetPart).append("...");
+            fragments++;
         }
-        return "..." + snippet + "...";
+
+        return snippetBuilder.toString();
     }
 
-
-    private double calculateRelevance(Page page, List<String> lemmas) {
-        String lowerContent = page.getContent().toLowerCase();
+    private double calculateRelevance(Page page, List<String> lemmas, Map<String, Integer> lemmaFrequencyMap) {
         double relevance = 0.0;
+        long totalPages = pageRepository.count(); // Общее число страниц в БД
+
         for (String lemma : lemmas) {
-            String lowerLemma = lemma.toLowerCase();
-            int index = 0;
-            int count = 0;
-            while ((index = lowerContent.indexOf(lowerLemma, index)) != -1) {
-                count++;
-                index += lowerLemma.length();
-            }
-            relevance += count;
+            int frequency = lemmaFrequencyMap.getOrDefault(lemma, 1);
+            int docsWithLemma = Math.max(lemmaRepository.countByLemma(lemma), 1);
+
+            // TF-IDF: (Частота в документе) * log(Общее число документов / Документы с данной леммой)
+            double tf = (double) frequency / Math.max(page.getContent().length(), 1);
+            double idf = Math.log((double) totalPages / docsWithLemma + 1); // +1 чтобы избежать деления на 0
+
+            relevance += tf * idf;
         }
         return relevance;
     }
