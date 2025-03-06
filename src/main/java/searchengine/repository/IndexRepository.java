@@ -6,6 +6,10 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.model.Index;
 import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+import searchengine.model.Page;
+import searchengine.model.Lemma;
+
 
 public interface IndexRepository extends JpaRepository<Index, Integer> {
 
@@ -14,7 +18,7 @@ public interface IndexRepository extends JpaRepository<Index, Integer> {
     @Query("DELETE FROM Index i WHERE i.page.site.id = :siteId")
     int deleteBySiteId(@Param("siteId") int siteId);
 
-
+    List<Index> findByPageAndLemmaIn(Page page, List<Lemma> lemmas);
 }
 
 

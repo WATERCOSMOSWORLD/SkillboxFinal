@@ -122,7 +122,8 @@ public class ApiController {
             @RequestParam(defaultValue = "20") int limit) {
 
         if (query == null || query.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(new SearchResponse("Задан пустой поисковый запрос"));
+            return ResponseEntity.badRequest()
+                    .body(new SearchResponse("Задан пустой поисковый запрос"));
         }
 
         try {
@@ -130,7 +131,8 @@ public class ApiController {
             return ResponseEntity.ok(searchResponse);
         } catch (Exception e) {
             logger.error("Ошибка выполнения поиска: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(new SearchResponse("Ошибка при выполнении поиска"));
+            return ResponseEntity.internalServerError()
+                    .body(new SearchResponse("Ошибка при выполнении поиска"));
         }
     }
 

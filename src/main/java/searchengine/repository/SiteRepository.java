@@ -7,7 +7,7 @@ import searchengine.model.IndexingStatus;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import org.springframework.data.jpa.repository.Modifying;
-import java.util.Optional;
+
 
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
@@ -22,5 +22,5 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     @Transactional
     void delete(Site site);
 
-    Optional<Site> findSiteByUrl(String url);
+
 }

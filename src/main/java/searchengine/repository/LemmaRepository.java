@@ -27,4 +27,7 @@ public interface LemmaRepository extends JpaRepository<Lemma, Long> {
 
 
     int countBySiteUrl(String siteUrl);
+
+
+    List<Lemma> findByLemmaIn(List<String> lemmas);
 }
