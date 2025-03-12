@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Modifying;
 import searchengine.model.Page;
+import searchengine.model.Site;
 import org.springframework.data.repository.query.Param;
 import java.util.List;
 
@@ -23,17 +24,17 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
 
 
-    @Query("SELECT DISTINCT p FROM Page p WHERE p.id IN " +
+    @Query("SELECT p FROM Page p WHERE p.id IN " +
             "(SELECT i.page.id FROM Index i WHERE i.lemma.lemma IN :lemmas)")
-    List<Page> findPagesByLemmas(@Param("lemmas") List<String> lemmas);
+    List<Page> findPagesByLemmas(@Param("lemmas") List<String> lemmas); // 🔹 Без указания сайта
 
-    @Query("SELECT DISTINCT p FROM Page p WHERE p.site.url = :site AND p.id IN " +
+    @Query("SELECT p FROM Page p WHERE p.site.url = :site AND p.id IN " +
             "(SELECT i.page.id FROM Index i WHERE i.lemma.lemma IN :lemmas)")
     List<Page> findPagesByLemmas(@Param("lemmas") List<String> lemmas, @Param("site") String site);
-
 
     boolean existsByPath(String path);
 
 
     int countBySiteUrl(String siteUrl);
+
 }

@@ -16,6 +16,7 @@ import searchengine.repository.SiteRepository;
 
 import java.util.ArrayList;
 import java.util.List;
+
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -44,29 +45,33 @@ public class StatisticsServiceImpl implements StatisticsService {
             item.setName(siteConfig.getName());
             item.setUrl(siteConfig.getUrl());
 
-            Site site = siteRepository.findByUrl(siteConfig.getUrl());
+            List<Site> sitesList = siteRepository.findAllByUrl(siteConfig.getUrl());
+            if (!sitesList.isEmpty()) {
+                Site site = sitesList.get(0); // Берем первую запись
 
-            if (site != null) {
-                if (indexingService.isSiteIndexing(siteConfig.getUrl())) {
-                    item.setStatus("INDEXING");
-                } else {
-                    item.setStatus(site.getStatus().toString());
+                if (site.getStatus() == IndexingStatus.INDEXING && !indexingService.isSiteIndexing(site.getUrl())) {
+                    site.setStatus(IndexingStatus.INDEXED);
+                    siteRepository.save(site);
                 }
+
+                item.setStatus(site.getStatus().toString());
 
                 if (site.getStatus() == IndexingStatus.FAILED) {
                     item.setError(site.getLastError());
                 }
+
+                item.setStatusTime(site.getStatusTime() != null ? site.getStatusTime().toEpochSecond(java.time.ZoneOffset.UTC) * 1000 : System.currentTimeMillis());
             } else {
                 item.setStatus("FAILED");
                 item.setError("Сайт отсутствует в базе данных");
+                item.setStatusTime(System.currentTimeMillis());
             }
 
             int pages = pageRepository.countBySiteUrl(siteConfig.getUrl());
-            int lemmas = lemmaRepository.countBySiteUrl(siteConfig.getUrl());
+            int lemmas = (!sitesList.isEmpty()) ? lemmaRepository.countBySiteId((long) sitesList.get(0).getId()) : 0;
 
             item.setPages(pages);
             item.setLemmas(lemmas);
-            item.setStatusTime(System.currentTimeMillis());
 
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
@@ -84,5 +89,4 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         return response;
     }
-
 }

@@ -11,7 +11,8 @@ import java.util.List;
 @Entity
 @Table(
         name = "site",
-        indexes = {@jakarta.persistence.Index(name = "idx_url", columnList = "url")}
+        indexes = {@jakarta.persistence.Index(name = "idx_url", columnList = "url")},
+        uniqueConstraints = {@UniqueConstraint(columnNames = "url")}
 )
 @Data
 @NoArgsConstructor
@@ -40,5 +41,4 @@ public class Site {
 
     @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Page> pages = new ArrayList<>();
-
 }

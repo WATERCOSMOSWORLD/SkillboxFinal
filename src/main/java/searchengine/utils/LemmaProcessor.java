@@ -32,16 +32,16 @@ public class LemmaProcessor {
     }
 
     private List<String> splitIntoWords(String text) {
-        return Arrays.stream(text.split("\\P{L}+")) // Разбиваем по не-буквенным символам
+        return Arrays.stream(text.split("\\P{L}+"))
                 .filter(word -> !word.isBlank())
                 .collect(Collectors.toList());
     }
 
     private String lemmatizeWord(String word) {
         try {
-            if (word.matches(".*[а-яА-Я]+.*")) { // Русское слово
+            if (word.matches(".*[а-яА-Я]+.*")) {
                 return processLemmas(russianMorphology, word);
-            } else if (word.matches(".*[a-zA-Z]+.*")) { // Английское слово
+            } else if (word.matches(".*[a-zA-Z]+.*")) {
                 return processLemmas(englishMorphology, word);
             }
         } catch (Exception e) {
@@ -57,7 +57,7 @@ public class LemmaProcessor {
         for (int i = 0; i < wordInfo.size(); i++) {
             String info = wordInfo.get(i);
             if (PARTICLES.stream().noneMatch(info::contains)) {
-                return normalForms.get(i); // Берём первую подходящую нормальную форму
+                return normalForms.get(i);
             }
         }
         return null;

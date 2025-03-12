@@ -12,5 +12,5 @@ import java.util.List;
 @Component
 @ConfigurationProperties(prefix = "indexing-settings")
 public class SitesList {
-    private List<ConfigSite> sites;  // Use ConfigSite instead of Site from model
+    private List<ConfigSite> sites;
 }

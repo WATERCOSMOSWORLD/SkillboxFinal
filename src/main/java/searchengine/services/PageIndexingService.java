@@ -78,22 +78,17 @@ public class PageIndexingService {
             String lemmaText = entry.getKey();
             int count = entry.getValue();
 
-            // Логируем найденные леммы
             logger.info("🔤 Найдена лемма: '{}', частота: {}", lemmaText, count);
 
-            // Ищем лемму в базе
             List<Lemma> foundLemmas = lemmaRepository.findByLemma(lemmaText);
             Lemma lemma;
 
             if (foundLemmas.isEmpty()) {
-                // Если лемма не найдена, создаем новую
                 lemma = new Lemma(null, page.getSite(), lemmaText, 0);
             } else {
-                // Если лемма найдена, берем первую из списка
                 lemma = foundLemmas.get(0);
             }
 
-            // Увеличиваем frequency только если эта лемма впервые встречается на странице
             if (!processedLemmas.contains(lemmaText)) {
                 lemma.setFrequency(lemma.getFrequency() + 1);
                 processedLemmas.add(lemmaText);
@@ -101,28 +96,24 @@ public class PageIndexingService {
 
             lemmasToSave.add(lemma);
 
-            // Создаем связь леммы с текущей страницей
             Index index = new Index(null, page, lemma, (float) count);
             indexesToSave.add(index);
         }
 
-        // Сохраняем все данные за 2 запроса
         lemmaRepository.saveAll(lemmasToSave);
         indexRepository.saveAll(indexesToSave);
     }
 
-    // 🔹 Метод для извлечения чистого текста из HTML
     private String extractTextFromHtml(String html) {
         return Jsoup.parse(html).text();
     }
 
-    // 🔹 Метод для лемматизации текста
     private Map<String, Integer> lemmatizeText(String text) {
         Map<String, Integer> lemmas = new HashMap<>();
         String[] words = text.toLowerCase().replaceAll("[^а-яa-z\\s]", "").split("\\s+");
 
         for (String word : words) {
-            if (word.length() < 3) continue; // Пропускаем короткие слова
+            if (word.length() < 3) continue;
 
             List<String> normalForms;
             if (word.matches("[а-я]+")) {
@@ -141,27 +132,19 @@ public class PageIndexingService {
     }
 
 
-
-
-
-
-    // 🔹 Метод для индексации конкретного сайта
     public boolean indexPage(String baseUrl) {
         long startTime = System.currentTimeMillis();
         Site site = null;
 
         try {
-            // Получаем сайт из конфигурации
             ConfigSite configSite = getConfigSiteByUrl(baseUrl);
             if (configSite == null) {
                 logger.warn("⚠️ Сайт {} не найден в конфигурации!", baseUrl);
                 return false;
             }
 
-            // Удаление старых данных о сайте перед индексацией
             deleteSiteData(baseUrl);
 
-            // Создаем новую запись о сайте
             site = new Site();
             site.setUrl(baseUrl);
             site.setName(configSite.getName());
@@ -173,7 +156,6 @@ public class PageIndexingService {
             ForkJoinPool forkJoinPool = new ForkJoinPool();
             forkJoinPool.invoke(new PageCrawler(site, baseUrl));
 
-            // 🔹 После успешного завершения меняем статус на INDEXED
             site.setStatus(IndexingStatus.INDEXED);
             site.setStatusTime(LocalDateTime.now());
             site.setLastError(null);
@@ -204,18 +186,14 @@ public class PageIndexingService {
     private void deleteSiteData(String siteUrl) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
         if (site != null) {
-            Long siteId = (long) site.getId();  // Приведение к Long для LemmaRepository
+            Long siteId = (long) site.getId();
 
-            // 1. Удаляем все записи из таблицы index (по siteId через page)
             int indexesDeleted = indexRepository.deleteBySiteId(site.getId());
 
-            // 2. Удаляем все записи из таблицы lemma (по siteId)
             int lemmasDeleted = lemmaRepository.deleteBySiteId(siteId);
 
-            // 3. Удаляем все страницы, связанные с сайтом
             int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
 
-            // 4. Удаляем сам сайт
             siteRepository.delete(site);
 
             logger.info("Удалено {} записей из таблицы index.", indexesDeleted);
@@ -266,7 +244,7 @@ public class PageIndexingService {
                 Document document = Jsoup.connect(url)
                         .userAgent("Mozilla/5.0")
                         .referrer("http://www.google.com")
-                        .ignoreContentType(true)  // Позволяет загружать файлы, а не только HTML
+                        .ignoreContentType(true)
                         .get();
 
                 String contentType = document.connection().response().contentType();
@@ -281,12 +259,11 @@ public class PageIndexingService {
                     page.setContent(document.html());
                     indexFilesAndImages(document);
                 } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
-                    page.setContent("FILE: " + url); // Для файлов сохраняем ссылку
+                    page.setContent("FILE: " + url);
                 }
 
                 pageRepository.save(page);
 
-                // 🔹 Вызываем метод лемматизации после сохранения страницы
                 processPageContent(page);
 
                 long endTime = System.currentTimeMillis();

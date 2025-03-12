@@ -15,7 +15,6 @@ public class SearchResponse {
     private List<SearchResult> data;
     private String error;
 
-    // 🔹 Конструктор для успешного ответа
     public SearchResponse(boolean result, int count, List<SearchResult> data) {
         this.result = result;
         this.count = count;
@@ -23,7 +22,6 @@ public class SearchResponse {
         this.error = null;
     }
 
-    // 🔹 Конструктор для ошибки
     public SearchResponse(String error) {
         this.result = false;
         this.count = 0;

@@ -48,17 +48,17 @@ public class PageCrawler extends RecursiveAction {
 
     @Override
     protected void compute() {
-        if (!checkAndLogStopCondition("Начало обработки")) return;
-
-        synchronized (visitedUrls) {
-            if (visitedUrls.contains(url)) {
-                logger.debug("URL уже обработан: {}", url);
-                return;
-            }
-            visitedUrls.add(url);
-        }
-
         try {
+            if (!checkAndLogStopCondition("Начало обработки")) return;
+
+            synchronized (visitedUrls) {
+                if (visitedUrls.contains(url)) {
+                    logger.debug("URL уже обработан: {}", url);
+                    return;
+                }
+                visitedUrls.add(url);
+            }
+
             long delay = 500 + new Random().nextInt(4500);
             logger.debug("Задержка перед запросом: {} ms для URL: {}", delay, url);
             Thread.sleep(delay);
@@ -72,6 +72,11 @@ public class PageCrawler extends RecursiveAction {
                     .ignoreContentType(true)
                     .execute();
 
+            if (response.statusCode() >= 400) {
+                logger.warn("Ошибка {} при индексации страницы {}", response.statusCode(), url);
+                return;
+            }
+
             handleResponse(response);
 
         } catch (IOException e) {
@@ -79,18 +84,18 @@ public class PageCrawler extends RecursiveAction {
         } catch (InterruptedException e) {
             logger.warn("Индексация прервана для URL {}: поток остановлен.", url);
             Thread.currentThread().interrupt();
+        } finally {
+            indexingService.checkAndUpdateStatus(site.getUrl());
+
+            logger.info("Индексация завершена для URL: {}", url);
         }
     }
-
-
-
 
     private void handleResponse(Connection.Response response) throws IOException {
         String contentType = response.contentType();
         int statusCode = response.statusCode();
         String path = new URL(url).getPath();
 
-        // Проверяем, есть ли страница в базе
         if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
             logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
             return;
@@ -109,11 +114,9 @@ public class PageCrawler extends RecursiveAction {
             String text = extractText(document);
             Map<String, Integer> lemmaFrequencies = lemmatizeText(text);
 
-            // Сохраняем страницу
             page.setContent(text);
             pageRepository.save(page);
 
-            // Сохраняем леммы и индексы
             saveLemmasAndIndexes(lemmaFrequencies, page);
 
             logger.info("HTML-страница добавлена: {}", url);
@@ -132,22 +135,21 @@ public class PageCrawler extends RecursiveAction {
     private Map<String, Integer> lemmatizeText(String text) throws IOException {
         Map<String, Integer> lemmaFrequencies = new HashMap<>();
 
-        // Используем LuceneMorphology для русского и английского языков
         LuceneMorphology russianMorph = new RussianLuceneMorphology();
         LuceneMorphology englishMorph = new EnglishLuceneMorphology();
 
-        String[] words = text.toLowerCase().split("\\P{L}+"); // Разбиваем текст на слова
+        String[] words = text.toLowerCase().split("\\P{L}+");
 
         for (String word : words) {
-            if (word.length() < 2) continue; // Игнорируем слишком короткие слова
+            if (word.length() < 2) continue;
 
             List<String> normalForms;
-            if (word.matches("[а-яё]+")) { // Проверяем, русский ли это текст
+            if (word.matches("[а-яё]+")) {
                 normalForms = russianMorph.getNormalForms(word);
-            } else if (word.matches("[a-z]+")) { // Проверяем, английский ли это текст
+            } else if (word.matches("[a-z]+")) {
                 normalForms = englishMorph.getNormalForms(word);
             } else {
-                continue; // Пропускаем другие языки
+                continue;
             }
 
             for (String lemma : normalForms) {
@@ -171,10 +173,10 @@ public class PageCrawler extends RecursiveAction {
             String lemmaText = entry.getKey();
             int rank = entry.getValue();
 
-            // Добавляем лемму в лог
+
             lemmaLog.append(lemmaText).append(" (").append(rank).append("), ");
 
-            // Проверяем, есть ли лемма в базе
+
             Optional<Lemma> optionalLemma = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite());
 
             Lemma lemma;
@@ -191,7 +193,6 @@ public class PageCrawler extends RecursiveAction {
                 newLemmas++;
             }
 
-            // Создаем связь между страницей и леммой
             Index index = new Index();
             index.setPage(page);
             index.setLemma(lemma);
@@ -200,7 +201,6 @@ public class PageCrawler extends RecursiveAction {
             savedIndexes++;
         }
 
-        // Выводим в лог найденные леммы и их количество
         logger.info(lemmaLog.toString());
 
         logger.info("Страница '{}' обработана. Новых лемм: {}, Обновленных лемм: {}, Связок (индексов): {}",
@@ -217,21 +217,17 @@ public class PageCrawler extends RecursiveAction {
 
             String childUrl = link.absUrl("href");
 
-            // Фильтрация: ссылка должна принадлежать корневому сайту из конфига.
-            // Это гарантирует, что обрабатываются только сайты, указанные в конфигурации.
             if (!childUrl.startsWith(site.getUrl())) {
                 logger.debug("Ссылка {} находится за пределами корневого сайта {}. Пропускаем.", childUrl, site.getUrl());
                 continue;
             }
 
-            // Обработка JavaScript ссылок
             if (childUrl.startsWith("javascript:")) {
                 logger.info("Обнаружена JavaScript ссылка: {}", childUrl);
                 saveJavaScriptLink(childUrl);
                 continue;
             }
 
-            // Обработка tel: ссылок
             if (childUrl.startsWith("tel:")) {
                 logger.info("Обнаружена телефонная ссылка: {}", childUrl);
                 savePhoneLink(childUrl);
@@ -261,7 +257,7 @@ public class PageCrawler extends RecursiveAction {
 
 
     private void savePhoneLink(String telUrl) {
-        String phoneNumber = telUrl.substring(4); // Убираем "tel:"
+        String phoneNumber = telUrl.substring(4);
         if (pageRepository.existsByPathAndSiteId(phoneNumber, site.getId())) {
             logger.info("Телефонный номер {} уже сохранён. Пропускаем.", phoneNumber);
             return;
@@ -270,7 +266,7 @@ public class PageCrawler extends RecursiveAction {
         Page page = new Page();
         page.setSite(site);
         page.setPath(phoneNumber);
-        page.setCode(0); // Код 0 для телефонных ссылок
+        page.setCode(0);
         page.setContent("Телефонный номер: " + phoneNumber);
         pageRepository.save(page);
 
@@ -285,8 +281,8 @@ public class PageCrawler extends RecursiveAction {
 
         Page page = new Page();
         page.setSite(site);
-        page.setPath(jsUrl); // Сохраняем полный jsUrl как path
-        page.setCode(0); // Код 0 для JavaScript ссылок
+        page.setPath(jsUrl);
+        page.setCode(0);
         page.setContent("JavaScript ссылка: " + jsUrl);
         pageRepository.save(page);
 

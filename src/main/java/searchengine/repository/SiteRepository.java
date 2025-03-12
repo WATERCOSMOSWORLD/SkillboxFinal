@@ -7,15 +7,16 @@ import searchengine.model.IndexingStatus;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import org.springframework.data.jpa.repository.Modifying;
-
+import java.util.Optional;
 
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
-    // Найти сайт по URL
+
     Site findByUrl(String url);
 
-    // Найти все сайты по статусу
+
     List<Site> findAllByStatus(IndexingStatus status);
+    List<Site> findAllByUrl(String url);
 
 
     @Modifying
@@ -23,4 +24,5 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     void delete(Site site);
 
     long countByStatus(IndexingStatus status);
+    Optional<Site> findFirstByUrl(String url);
 }

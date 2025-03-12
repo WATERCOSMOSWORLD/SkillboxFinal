@@ -19,13 +19,13 @@ public class Page {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id; // Изменено с int на Integer для поддержки null
+    private Integer id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "site_id", nullable = false)
     private Site site;
 
-    @Column(length = 500, nullable = false) // Increase length to accommodate longer paths
+    @Column(length = 500, nullable = false)
     private String path;
 
 
@@ -36,23 +36,18 @@ public class Page {
     private String content;
 
     @Column(length = 500)
-    private String contentType; // Столбец для хранения типа содержимого (например, "image/png")
+    private String contentType;
 
-    // Дополнительное поле для хранения заголовка страницы
     @Transient
     private String title;
 
-    // Дополнительное поле для хранения текста страницы
     @Transient
     private String text;
 
-
-
-    // Метод для извлечения текста из HTML контента
     public String getText() {
         if (content != null) {
             Document doc = Jsoup.parse(content);
-            return doc.text(); // Извлекаем текст из HTML (без тегов)
+            return doc.text();
         }
         return null;
     }

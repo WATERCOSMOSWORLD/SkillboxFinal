@@ -160,18 +160,14 @@ public class IndexingService {
     private void deleteSiteData(String siteUrl) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
         if (site != null) {
-            Long siteId = (long) site.getId();  // Приведение к Long для LemmaRepository
+            Long siteId = (long) site.getId();
 
-            // 1. Удаляем все записи из таблицы index (по siteId через page)
             int indexesDeleted = indexRepository.deleteBySiteId(site.getId());
 
-            // 2. Удаляем все записи из таблицы lemma (по siteId)
             int lemmasDeleted = lemmaRepository.deleteBySiteId(siteId);
 
-            // 3. Удаляем все страницы, связанные с сайтом
             int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
 
-            // 4. Удаляем сам сайт
             siteRepository.delete(site);
 
             logger.info("Удалено {} записей из таблицы index.", indexesDeleted);
@@ -228,4 +224,11 @@ public class IndexingService {
     }
 
 
+    public boolean checkAndUpdateStatus(String message) {
+        if (!indexingInProgress) {
+            logger.warn("Индексация остановлена: {}", message);
+            return false;
+        }
+        return true;
+    }
 }

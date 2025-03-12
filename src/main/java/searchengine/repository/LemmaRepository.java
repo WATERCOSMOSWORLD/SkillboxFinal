@@ -26,11 +26,11 @@ public interface LemmaRepository extends JpaRepository<Lemma, Long> {
     Optional<Lemma> findByLemmaAndSite(String lemma, Site site);
 
 
-    int countBySiteUrl(String siteUrl);
 
 
     int countByLemma(String lemma);
 
 
+    int countBySiteId(Long siteId);
 
 }
