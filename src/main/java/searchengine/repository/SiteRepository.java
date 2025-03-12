@@ -22,5 +22,5 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     @Transactional
     void delete(Site site);
 
-
+    long countByStatus(IndexingStatus status);
 }

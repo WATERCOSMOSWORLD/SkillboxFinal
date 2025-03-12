@@ -31,4 +31,6 @@ public interface LemmaRepository extends JpaRepository<Lemma, Long> {
 
     int countByLemma(String lemma);
 
+
+
 }
