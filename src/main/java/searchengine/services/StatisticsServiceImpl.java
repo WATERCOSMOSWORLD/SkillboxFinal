@@ -17,8 +17,6 @@ import searchengine.repository.SiteRepository;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.springframework.web.client.RestTemplate;
-
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
@@ -27,17 +25,18 @@ public class StatisticsServiceImpl implements StatisticsService {
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
     private final SiteRepository siteRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
     private final IndexingService indexingService;
 
     @Override
     public StatisticsResponse getStatistics() {
+        // Создаём итоговые данные
         TotalStatistics total = new TotalStatistics();
         total.setSites(sites.getSites().size());
         total.setPages(0);
         total.setLemmas(0);
         total.setIndexing(indexingService.isIndexingInProgress());
 
+        // Список подробной статистики
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
 
         for (ConfigSite siteConfig : sites.getSites()) {
@@ -45,40 +44,39 @@ public class StatisticsServiceImpl implements StatisticsService {
             item.setName(siteConfig.getName());
             item.setUrl(siteConfig.getUrl());
 
-            List<Site> sitesList = siteRepository.findAllByUrl(siteConfig.getUrl());
-            if (!sitesList.isEmpty()) {
-                Site site = sitesList.get(0); // Берем первую запись
-
-                if (site.getStatus() == IndexingStatus.INDEXING && !indexingService.isSiteIndexing(site.getUrl())) {
-                    site.setStatus(IndexingStatus.INDEXED);
-                    siteRepository.save(site);
-                }
-
+            // Получаем сайт из базы по URL
+            Site site = siteRepository.findFirstByUrl(siteConfig.getUrl()).orElse(null);
+            if (site != null) {
+                updateSiteStatus(site);  // Обновляем статус сайта, если необходимо
                 item.setStatus(site.getStatus().toString());
+                item.setStatusTime(getStatusTime(site));
 
                 if (site.getStatus() == IndexingStatus.FAILED) {
                     item.setError(site.getLastError());
                 }
 
-                item.setStatusTime(site.getStatusTime() != null ? site.getStatusTime().toEpochSecond(java.time.ZoneOffset.UTC) * 1000 : System.currentTimeMillis());
+                // Получаем количество страниц и лемм
+                int pages = pageRepository.countBySiteUrl(siteConfig.getUrl());
+                int lemmas = lemmaRepository.countBySiteId((long) site.getId());
+
+                item.setPages(pages);
+                item.setLemmas(lemmas);
+
+                // Обновляем общие статистики
+                total.setPages(total.getPages() + pages);
+                total.setLemmas(total.getLemmas() + lemmas);
+
             } else {
+                // Если сайт не найден в базе
                 item.setStatus("FAILED");
                 item.setError("Сайт отсутствует в базе данных");
                 item.setStatusTime(System.currentTimeMillis());
             }
 
-            int pages = pageRepository.countBySiteUrl(siteConfig.getUrl());
-            int lemmas = (!sitesList.isEmpty()) ? lemmaRepository.countBySiteId((long) sitesList.get(0).getId()) : 0;
-
-            item.setPages(pages);
-            item.setLemmas(lemmas);
-
-            total.setPages(total.getPages() + pages);
-            total.setLemmas(total.getLemmas() + lemmas);
-
-            detailed.add(item);
+            detailed.add(item); // Добавляем детализированную информацию
         }
 
+        // Формируем и возвращаем статистику
         StatisticsData data = new StatisticsData();
         data.setTotal(total);
         data.setDetailed(detailed);
@@ -88,5 +86,18 @@ public class StatisticsServiceImpl implements StatisticsService {
         response.setResult(true);
 
         return response;
+    }
+
+    // Метод для обновления статуса сайта
+    private void updateSiteStatus(Site site) {
+        if (site.getStatus() == IndexingStatus.INDEXING && !indexingService.isSiteIndexing(site.getUrl())) {
+            site.setStatus(IndexingStatus.INDEXED);
+            siteRepository.save(site);
+        }
+    }
+
+    // Метод для получения времени статуса сайта
+    private long getStatusTime(Site site) {
+        return site.getStatusTime() != null ? site.getStatusTime().toEpochSecond(java.time.ZoneOffset.UTC) * 1000 : System.currentTimeMillis();
     }
 }

@@ -8,16 +8,10 @@ import searchengine.model.Index;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-
-
 public interface IndexRepository extends JpaRepository<Index, Integer> {
 
     @Modifying
     @Transactional
     @Query("DELETE FROM Index i WHERE i.page.site.id = :siteId")
     int deleteBySiteId(@Param("siteId") int siteId);
-
-
 }
-
-

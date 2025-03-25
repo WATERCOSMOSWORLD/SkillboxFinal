@@ -5,10 +5,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import searchengine.model.Page;
-import searchengine.model.Site;
-import searchengine.model.Lemma;
-import searchengine.model.Index;
+import org.springframework.transaction.annotation.Transactional;
+import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
@@ -17,11 +15,13 @@ import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
 import java.io.IOException;
 import java.net.URL;
+import searchengine.repository.SiteRepository;
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.RecursiveAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.util.List;
 
 public class PageCrawler extends RecursiveAction {
@@ -33,9 +33,10 @@ public class PageCrawler extends RecursiveAction {
     private final IndexingService indexingService;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
+    private final Set<String> visitedPages = new ConcurrentSkipListSet<>();
+    private final SiteRepository siteRepository;
 
-
-    public PageCrawler(Site site,LemmaRepository lemmaRepository,IndexRepository indexRepository, String url, Set<String> visitedUrls, PageRepository pageRepository, IndexingService indexingService) {
+    public PageCrawler(Site site,LemmaRepository lemmaRepository,SiteRepository siteRepository,IndexRepository indexRepository, String url, Set<String> visitedUrls, PageRepository pageRepository, IndexingService indexingService) {
         this.site = site;
         this.url = url;
         this.visitedUrls = visitedUrls;
@@ -43,27 +44,111 @@ public class PageCrawler extends RecursiveAction {
         this.indexingService = indexingService;
         this.indexRepository = indexRepository;
         this.lemmaRepository = lemmaRepository;
-
+        this.siteRepository = siteRepository;
     }
 
     @Override
     protected void compute() {
+        // Проверка на уже посещенную страницу или пропуск URL
+        if (!visitedPages.add(url) || shouldSkipUrl(url) || pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // Задержка между запросами (от 500 до 5000 миллисекунд)
+            long delay = 500 + (long) (Math.random() * 4500);
+            Thread.sleep(delay);
+
+            // Обновление времени последнего статуса сайта
+            site.setStatusTime(LocalDateTime.now());
+            siteRepository.save(site);
+
+            logger.info("🌍 Загружаем страницу: {}", url);
+
+            // Загрузка документа через Jsoup
+            Document document = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0")
+                    .referrer("http://www.google.com")
+                    .ignoreContentType(true)
+                    .get();
+
+            // Получаем информацию о типе контента и коде ответа
+            String contentType = document.connection().response().contentType();
+            int responseCode = document.connection().response().statusCode();
+
+            // Создаем объект страницы для сохранения
+            Page page = new Page();
+            page.setPath(url.replace(site.getUrl(), ""));
+            page.setSite(site);
+            page.setCode(responseCode);
+
+            // Если это HTML-страница, сохраняем ее содержимое и индексируем файлы и изображения
+            if (contentType.startsWith("text/html")) {
+                page.setContent(document.html());
+                indexFilesAndImages(document);
+            } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
+                page.setContent("FILE: " + url);
+            }
+
+            // Сохраняем страницу в репозитории
+            pageRepository.save(page);
+
+            // Обрабатываем содержимое страницы (например, анализ лемм)
+            processPageContent(page);
+
+            long endTime = System.currentTimeMillis();
+            logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
+
+            // Извлекаем все ссылки на странице и создаем подзадачи для их обработки
+            Elements links = document.select("a[href]");
+            List<PageCrawler> subTasks = links.stream()
+                    .map(link -> cleanUrl(link.absUrl("href")))
+                    .filter(link -> link.startsWith(site.getUrl()) && !shouldSkipUrl(link))
+                    .map(link -> new PageCrawler(
+                            site,                          // передаем site
+                            lemmaRepository,               // передаем lemmaRepository
+                            siteRepository,                // передаем siteRepository
+                            indexRepository,               // передаем indexRepository
+                            link,                          // передаем ссылку как url
+                            visitedUrls,                   // передаем visitedUrls
+                            pageRepository,                // передаем pageRepository
+                            indexingService                // передаем indexingService
+                    ))
+                    .toList();
+
+            logger.info("🔗 Найдено ссылок: {}", subTasks.size());
+            invokeAll(subTasks); // Запускаем параллельные задачи
+
+        } catch (IOException e) {
+            handleException("❌ Ошибка при загрузке", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Если поток был прерван
+            handleException("⏳ Поток прерван", e);
+        }
+
+        // Дополнительная часть кода для обработки страницы
         try {
             if (!shouldProcessUrl()) return;
 
-            applyRequestDelay();
+            applyRequestDelay(); // Применение задержки перед запросом
             if (!checkAndLogStopCondition("Перед запросом")) return;
 
-            Connection.Response response = fetchPageContent();
+            Connection.Response response = fetchPageContent(); // Получаем содержимое страницы
             if (response != null) {
-                handleResponse(response);  // Добавляем вызов метода handleResponse для обработки ответа
+                handleResponse(response);  // Обработка ответа
             }
         } catch (IOException | InterruptedException e) {
             handleException(e);
         } finally {
-            finalizeIndexing();
+            finalizeIndexing(); // Завершаем индексацию
         }
     }
+
+
+
+
 
 
     private boolean shouldProcessUrl() {
@@ -283,7 +368,17 @@ public class PageCrawler extends RecursiveAction {
             synchronized (visitedUrls) {
                 if (childPath != null && !visitedUrls.contains(childPath)) {
                     visitedUrls.add(childPath);
-                    subtasks.add(new PageCrawler(site, lemmaRepository, indexRepository, childUrl, visitedUrls, pageRepository, indexingService));
+                    subtasks.add(new PageCrawler(
+                            site,                          // объект сайта
+                            lemmaRepository,               // репозиторий лемм
+                            siteRepository,                // репозиторий сайта (добавьте этот параметр)
+                            indexRepository,               // репозиторий индексов
+                            childUrl,                      // дочерний URL
+                            visitedUrls,                   // множество посещенных URL
+                            pageRepository,                // репозиторий страниц
+                            indexingService                // сервис индексации
+                    ));
+
                     logger.debug("Добавлена ссылка в обработку: {}", childUrl);
                 } else {
                     logger.debug("Ссылка уже обработана: {}", childUrl);
@@ -398,4 +493,111 @@ public class PageCrawler extends RecursiveAction {
         logger.info("Контент с неизвестным типом добавлен: {}", url);
     }
 
+
+    private void indexFilesAndImages(Document document) {
+        Elements images = document.select("img[src]");
+        Elements files = document.select("a[href]");
+
+        for (var img : images) {
+            String imgUrl = cleanUrl(img.absUrl("src"));
+            saveMedia(imgUrl, "image");
+        }
+
+        for (var file : files) {
+            String fileUrl = cleanUrl(file.absUrl("href"));
+            if (fileUrl.matches(".*\\.(pdf|docx|xlsx|zip|rar)$")) {
+                saveMedia(fileUrl, "file");
+            }
+        }
+    }
+
+    private void saveMedia(String url, String type) {
+        Page mediaPage = new Page();
+        mediaPage.setPath(url.replace(site.getUrl(), ""));
+        mediaPage.setSite(site);
+        mediaPage.setCode(200);
+        mediaPage.setContent(type.toUpperCase() + ": " + url);
+        pageRepository.save(mediaPage);
+
+        logger.info("📂 Добавлен {}: {}", type, url);
+    }
+
+    private void handleException(String message, Exception e) {
+        logger.error("{} {}: {}", message, url, e.getMessage(), e);
+        site.setStatus(IndexingStatus.FAILED);
+        site.setStatusTime(LocalDateTime.now());
+        site.setLastError(message + " " + url + ": " + e.getMessage());
+        siteRepository.save(site);
+    }
+
+    private String cleanUrl(String url) {
+        return url.replaceAll("#.*", "").replaceAll("\\?.*", "");
+    }
+
+    private boolean shouldSkipUrl(String url) {
+        return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
+    }
+
+
+    @Transactional
+    public void processPageContent(Page page) {
+        try {
+            // Извлекаем текст из HTML страницы
+            String text = extractTextFromHtml(page.getContent());
+
+            // Лемматизация текста
+            Map<String, Integer> lemmas = lemmatizeText(text);
+
+            Set<String> processedLemmas = new HashSet<>();
+            List<Lemma> lemmasToSave = new ArrayList<>();
+            List<Index> indexesToSave = new ArrayList<>();
+
+            // Обработка лемм
+            for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
+                String lemmaText = entry.getKey();
+                int count = entry.getValue();
+
+                logger.info("🔤 Найдена лемма: '{}', частота: {}", lemmaText, count);
+
+                List<Lemma> foundLemmas = lemmaRepository.findByLemma(lemmaText);
+                Lemma lemma;
+
+                if (foundLemmas.isEmpty()) {
+                    lemma = new Lemma(null, page.getSite(), lemmaText, 0);
+                } else {
+                    lemma = foundLemmas.get(0);
+                }
+
+                if (!processedLemmas.contains(lemmaText)) {
+                    lemma.setFrequency(lemma.getFrequency() + 1);
+                    processedLemmas.add(lemmaText);
+                }
+
+                lemmasToSave.add(lemma);
+
+                Index index = new Index(null, page, lemma, (float) count);
+                indexesToSave.add(index);
+            }
+
+            // Сохранение лемм и индексов в репозитории
+            lemmaRepository.saveAll(lemmasToSave);
+            indexRepository.saveAll(indexesToSave);
+
+        } catch (IOException e) {
+            // Логируем ошибку, если IOException был брошен
+            logger.error("Ошибка при обработке страницы: {}", page.getPath(), e);
+            // Можете также повторно выбросить исключение, если хотите остановить выполнение
+            throw new RuntimeException("Ошибка при извлечении текста с страницы", e);
+        }
+    }
+
+
+
+
+    private String extractTextFromHtml(String html) {
+        return Jsoup.parse(html).text();
+    }
+
 }
+
+

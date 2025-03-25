@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
+import searchengine.model.Site ;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
@@ -24,7 +25,7 @@ public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
     private final ConcurrentHashMap<String, Boolean> indexingTasks = new ConcurrentHashMap<>();
-
+    private final IndexingService indexingService;
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
@@ -35,8 +36,9 @@ public class IndexingService {
     private ExecutorService executorService;
     private ForkJoinPool forkJoinPool;
 
-    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository,IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
+    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository,IndexingService indexingService, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
         this.sitesList = sitesList;
+        this.indexingService = indexingService;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.indexRepository = indexRepository;
@@ -139,22 +141,25 @@ public class IndexingService {
     }
 
 
-    private void crawlAndIndexPages(searchengine.model.Site site, String startUrl) {
-        forkJoinPool = new ForkJoinPool();
+    private void crawlAndIndexPages(Site site, String startUrl) {
+        ForkJoinPool forkJoinPool = new ForkJoinPool();  // инициализация ForkJoinPool
         try {
+            // Запуск PageCrawler через ForkJoinPool
             forkJoinPool.invoke(new PageCrawler(
                     site,
                     lemmaRepository,  // передаем LemmaRepository
+                    siteRepository,   // передаем SiteRepository
                     indexRepository,  // передаем IndexRepository
-                    startUrl,
-                    new HashSet<>(),
-                    pageRepository,
-                    this
+                    startUrl,         // начальный URL
+                    new HashSet<>(),  // множество посещенных URL
+                    pageRepository,   // передаем PageRepository
+                    indexingService   // передаем IndexingService
             ));
         } finally {
-            forkJoinPool.shutdown();
+            forkJoinPool.shutdown();  // убедитесь, что пул потоков будет завершен
         }
     }
+
 
     @Transactional
     private void deleteSiteData(String siteUrl) {
