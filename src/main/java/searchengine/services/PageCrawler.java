@@ -139,7 +139,6 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
-
     private boolean shouldProcessUrl() {
         return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
     }
@@ -160,8 +159,6 @@ public class PageCrawler extends RecursiveAction {
             visitedUrls.add(url);
         }
         return true;}
-
-
 
     private Connection.Response fetchPageContent() throws IOException {
         logger.info("Обработка URL: {}", url);
@@ -261,8 +258,4 @@ public class PageCrawler extends RecursiveAction {
             forkJoinPool.shutdown();
         }
     }
-
-
-
-
 }
