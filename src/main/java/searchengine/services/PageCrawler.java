@@ -3,7 +3,6 @@ package searchengine.services;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.model.*;
@@ -235,10 +234,6 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
-    private String extractText(Document document) {
-        return document.text();
-    }
-
     private Map<String, Integer> lemmatizeText(String text) throws IOException {
         Map<String, Integer> lemmaFrequencies = new HashMap<>();
 
@@ -265,95 +260,6 @@ public class PageCrawler extends RecursiveAction {
         }
 
         return lemmaFrequencies;
-    }
-
-    private void processLinks(Document document) {
-        Elements links = document.select("a[href]");
-        List<PageCrawler> subtasks = new ArrayList<>();
-
-        for (Element link : links) {
-            if (!checkAndLogStopCondition("При обработке ссылок")) return;
-
-            String childUrl = link.absUrl("href");
-
-            if (!childUrl.startsWith(site.getUrl())) {
-                logger.debug("Ссылка {} находится за пределами корневого сайта {}. Пропускаем.", childUrl, site.getUrl());
-                continue;
-            }
-
-            if (childUrl.startsWith("javascript:")) {
-                logger.info("Обнаружена JavaScript ссылка: {}", childUrl);
-                saveJavaScriptLink(childUrl);
-                continue;
-            }
-
-            if (childUrl.startsWith("tel:")) {
-                logger.info("Обнаружена телефонная ссылка: {}", childUrl);
-                savePhoneLink(childUrl);
-                continue;
-            }
-
-            String childPath = null;
-            try {
-                childPath = new URL(childUrl).getPath();
-            } catch (Exception e) {
-                logger.warn("Ошибка извлечения пути из URL: {}", childUrl);
-            }
-
-            synchronized (visitedUrls) {
-                if (childPath != null && !visitedUrls.contains(childPath)) {
-                    visitedUrls.add(childPath);
-                    subtasks.add(new PageCrawler(
-                            site,                          // объект сайта
-                            lemmaRepository,               // репозиторий лемм
-                            siteRepository,                // репозиторий сайта (добавьте этот параметр)
-                            indexRepository,               // репозиторий индексов
-                            childUrl,                      // дочерний URL
-                            visitedUrls,                   // множество посещенных URL
-                            pageRepository,                // репозиторий страниц
-                            indexingService                // сервис индексации
-                    ));
-
-                    logger.debug("Добавлена ссылка в обработку: {}", childUrl);
-                } else {
-                    logger.debug("Ссылка уже обработана: {}", childUrl);
-                }
-            }
-        }
-        invokeAll(subtasks);
-    }
-
-    private void savePhoneLink(String telUrl) {
-        String phoneNumber = telUrl.substring(4);
-        if (pageRepository.existsByPathAndSiteId(phoneNumber, site.getId())) {
-            logger.info("Телефонный номер {} уже сохранён. Пропускаем.", phoneNumber);
-            return;
-        }
-
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(phoneNumber);
-        page.setCode(0);
-        page.setContent("Телефонный номер: " + phoneNumber);
-        pageRepository.save(page);
-
-        logger.info("Сохранён телефонный номер: {}", phoneNumber);
-    }
-
-    private void saveJavaScriptLink(String jsUrl) {
-        if (pageRepository.existsByPathAndSiteId(jsUrl, site.getId())) {
-            logger.info("JavaScript ссылка {} уже сохранена. Пропускаем.", jsUrl);
-            return;
-        }
-
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(jsUrl);
-        page.setCode(0);
-        page.setContent("JavaScript ссылка: " + jsUrl);
-        pageRepository.save(page);
-
-        logger.info("Сохранена JavaScript ссылка: {}", jsUrl);
     }
 
     private void handleError(IOException e) {
@@ -406,8 +312,6 @@ public class PageCrawler extends RecursiveAction {
         pageRepository.save(page);
         logger.info("Изображение добавлено: {}", url);
     }
-
-
 
     private void processUnknownContent(Page page, String contentType) {
         page.setContent("Unhandled content type: " + contentType);
@@ -463,17 +367,14 @@ public class PageCrawler extends RecursiveAction {
     @Transactional
     public void processPageContent(Page page) {
         try {
-            // Извлекаем текст из HTML страницы
             String text = extractTextFromHtml(page.getContent());
 
-            // Лемматизация текста
             Map<String, Integer> lemmas = lemmatizeText(text);
 
             Set<String> processedLemmas = new HashSet<>();
             List<Lemma> lemmasToSave = new ArrayList<>();
             List<Index> indexesToSave = new ArrayList<>();
 
-            // Обработка лемм
             for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
                 String lemmaText = entry.getKey();
                 int count = entry.getValue();
@@ -500,14 +401,11 @@ public class PageCrawler extends RecursiveAction {
                 indexesToSave.add(index);
             }
 
-            // Сохранение лемм и индексов в репозитории
             lemmaRepository.saveAll(lemmasToSave);
             indexRepository.saveAll(indexesToSave);
 
         } catch (IOException e) {
-            // Логируем ошибку, если IOException был брошен
             logger.error("Ошибка при обработке страницы: {}", page.getPath(), e);
-            // Можете также повторно выбросить исключение, если хотите остановить выполнение
             throw new RuntimeException("Ошибка при извлечении текста с страницы", e);
         }
     }
