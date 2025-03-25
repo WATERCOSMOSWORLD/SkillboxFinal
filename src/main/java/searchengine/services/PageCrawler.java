@@ -53,7 +53,6 @@ public class PageCrawler extends RecursiveAction {
 
     @Override
     protected void compute() {
-        // Проверка на уже посещенную страницу или пропуск URL
         if (!visitedPages.add(url) || shouldSkipUrl(url) || pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
             return;
         }
@@ -61,95 +60,83 @@ public class PageCrawler extends RecursiveAction {
         long startTime = System.currentTimeMillis();
 
         try {
-            // Задержка между запросами (от 500 до 5000 миллисекунд)
             long delay = 500 + (long) (Math.random() * 4500);
             Thread.sleep(delay);
 
-            // Обновление времени последнего статуса сайта
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
 
             logger.info("🌍 Загружаем страницу: {}", url);
 
-            // Загрузка документа через Jsoup
             Document document = Jsoup.connect(url)
                     .userAgent("Mozilla/5.0")
                     .referrer("http://www.google.com")
                     .ignoreContentType(true)
                     .get();
 
-            // Получаем информацию о типе контента и коде ответа
             String contentType = document.connection().response().contentType();
             int responseCode = document.connection().response().statusCode();
 
-            // Создаем объект страницы для сохранения
             Page page = new Page();
             page.setPath(url.replace(site.getUrl(), ""));
             page.setSite(site);
             page.setCode(responseCode);
 
-            // Если это HTML-страница, сохраняем ее содержимое и индексируем файлы и изображения
             if (contentType.startsWith("text/html")) {
                 page.setContent(document.html());
-                indexFilesAndImages(document);  // Индексация файлов и изображений
+                indexFilesAndImages(document);
             } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
                 page.setContent("FILE: " + url);
             }
 
-            // Сохраняем страницу в репозитории
             pageRepository.save(page);
 
-            // Обрабатываем содержимое страницы (например, анализ лемм)
             processPageContent(page);
 
             long endTime = System.currentTimeMillis();
             logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
 
-            // Извлекаем все ссылки на странице и создаем подзадачи для их обработки
             Elements links = document.select("a[href]");
             List<PageCrawler> subTasks = links.stream()
                     .map(link -> cleanUrl(link.absUrl("href")))
                     .filter(link -> link.startsWith(site.getUrl()) && !shouldSkipUrl(link))
                     .map(link -> new PageCrawler(
-                            site,                          // передаем site
-                            lemmaRepository,               // передаем lemmaRepository
-                            siteRepository,                // передаем siteRepository
-                            indexRepository,               // передаем indexRepository
-                            link,                          // передаем ссылку как url
-                            visitedUrls,                   // передаем visitedUrls
-                            pageRepository,                // передаем pageRepository
-                            indexingService                // передаем indexingService
+                            site,
+                            lemmaRepository,
+                            siteRepository,
+                            indexRepository,
+                            link,
+                            visitedUrls,
+                            pageRepository,
+                            indexingService
                     ))
                     .toList();
 
             logger.info("🔗 Найдено ссылок: {}", subTasks.size());
-            invokeAll(subTasks); // Запускаем параллельные задачи
+            invokeAll(subTasks);
 
         } catch (IOException e) {
             handleException("❌ Ошибка при загрузке", e);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt(); // Если поток был прерван
+            Thread.currentThread().interrupt();
             handleException("⏳ Поток прерван", e);
         }
 
-        // Дополнительная часть кода для обработки страницы
         try {
             if (!shouldProcessUrl()) return;
 
-            applyRequestDelay(); // Применение задержки перед запросом
+            applyRequestDelay();
             if (!checkAndLogStopCondition("Перед запросом")) return;
 
-            Connection.Response response = fetchPageContent(); // Получаем содержимое страницы
+            Connection.Response response = fetchPageContent();
             if (response != null) {
-                handleResponse(response);  // Обработка ответа
+                handleResponse(response);
             }
         } catch (IOException | InterruptedException e) {
             handleException(e);
         } finally {
-            finalizeIndexing(); // Завершаем индексацию
-        }
-    }
-
+            finalizeIndexing();
+        }}
 
     private boolean shouldProcessUrl() {
         return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
@@ -164,14 +151,12 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
-
     private void handleException(Exception e) {
         if (e instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }
         handleError(new IOException("Ошибка при обработке страницы", e));
     }
-
 
     private boolean markUrlAsVisited() {
         synchronized (visitedUrls) {
@@ -181,8 +166,7 @@ public class PageCrawler extends RecursiveAction {
             }
             visitedUrls.add(url);
         }
-        return true;
-    }
+        return true;}
 
     private void applyRequestDelay() throws InterruptedException {
         long delay = 500 + new Random().nextInt(4500);
@@ -255,7 +239,6 @@ public class PageCrawler extends RecursiveAction {
         return document.text();
     }
 
-
     private Map<String, Integer> lemmatizeText(String text) throws IOException {
         Map<String, Integer> lemmaFrequencies = new HashMap<>();
 
@@ -283,7 +266,6 @@ public class PageCrawler extends RecursiveAction {
 
         return lemmaFrequencies;
     }
-
 
     private void processLinks(Document document) {
         Elements links = document.select("a[href]");
@@ -340,8 +322,6 @@ public class PageCrawler extends RecursiveAction {
         }
         invokeAll(subtasks);
     }
-
-
 
     private void savePhoneLink(String telUrl) {
         String phoneNumber = telUrl.substring(4);
