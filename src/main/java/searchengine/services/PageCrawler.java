@@ -13,7 +13,7 @@ import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
 import java.io.IOException;
-
+import org.springframework.transaction.annotation.Propagation;
 import searchengine.repository.SiteRepository;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -277,11 +277,10 @@ public class PageCrawler extends RecursiveAction {
         return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processPageContent(Page page) {
         try {
             String text = extractTextFromHtml(page.getContent());
-
             Map<String, Integer> lemmas = lemmatizeText(text);
 
             Set<String> processedLemmas = new HashSet<>();
@@ -298,14 +297,10 @@ public class PageCrawler extends RecursiveAction {
                 Lemma lemma;
 
                 if (foundLemmas.isEmpty()) {
-                    lemma = new Lemma(null, page.getSite(), lemmaText, 0);
+                    lemma = new Lemma(null, page.getSite(), lemmaText, 1);
                 } else {
                     lemma = foundLemmas.get(0);
-                }
-
-                if (!processedLemmas.contains(lemmaText)) {
                     lemma.setFrequency(lemma.getFrequency() + 1);
-                    processedLemmas.add(lemmaText);
                 }
 
                 lemmasToSave.add(lemma);
