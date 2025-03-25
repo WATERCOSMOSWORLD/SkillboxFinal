@@ -60,7 +60,13 @@ public class PageCrawler extends RecursiveAction {
 
         try {
             long delay = 500 + (long) (Math.random() * 4500);
-            Thread.sleep(delay);
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("Поток прерван: {}", e.getMessage());
+                return;
+            }
 
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
@@ -116,22 +122,18 @@ public class PageCrawler extends RecursiveAction {
 
         } catch (IOException e) {
             handleException("❌ Ошибка при загрузке", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            handleException("⏳ Поток прерван", e);
         }
 
         try {
             if (!shouldProcessUrl()) return;
 
-            applyRequestDelay();
             if (!checkAndLogStopCondition("Перед запросом")) return;
 
             Connection.Response response = fetchPageContent();
             if (response != null) {
                 // Удален вызов handleResponse(response)
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             handleException(e);
         } finally {
             finalizeIndexing();
@@ -159,11 +161,7 @@ public class PageCrawler extends RecursiveAction {
         }
         return true;}
 
-    private void applyRequestDelay() throws InterruptedException {
-        long delay = 500 + new Random().nextInt(4500);
-        logger.debug("Задержка перед запросом: {} ms для URL: {}", delay, url);
-        Thread.sleep(delay);
-    }
+
 
     private Connection.Response fetchPageContent() throws IOException {
         logger.info("Обработка URL: {}", url);
