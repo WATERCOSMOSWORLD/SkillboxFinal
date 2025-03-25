@@ -18,19 +18,22 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import searchengine.services.SearchService;
 import searchengine.dto.search.SearchResponse;
-
+import org.springframework.context.annotation.Lazy;
 
 @RestController
+@Lazy
 @RequestMapping("/api")
 public class ApiController {
     private static final Logger logger = LoggerFactory.getLogger(ApiController.class);
+    @Lazy
     private final StatisticsService statisticsService;
+    @Lazy
     private final IndexingService indexingService;
     private final ExecutorService executorService;
     private final PageIndexingService pageIndexingService;  // Исправленное имя переменной
     private final SearchService searchService;
 
-    public ApiController(StatisticsService statisticsService,SearchService searchService, PageIndexingService pageIndexingService, IndexingService indexingService, ExecutorService executorService) {
+    public ApiController(@Lazy StatisticsService statisticsService,SearchService searchService,@Lazy PageIndexingService pageIndexingService,@Lazy IndexingService indexingService, ExecutorService executorService) {
         this.statisticsService = statisticsService;
         this.indexingService = indexingService;
         this.executorService = executorService;
@@ -38,15 +41,11 @@ public class ApiController {
         this.searchService = searchService;
     }
 
-
-
     @GetMapping("/statistics")
     public ResponseEntity<StatisticsResponse> statistics() {
         StatisticsResponse statistics = statisticsService.getStatistics();
         return ResponseEntity.ok(statistics);
     }
-
-
 
     @GetMapping("/startIndexing")
     public ResponseEntity<Map<String, Object>> startIndexing() {
@@ -81,8 +80,6 @@ public class ApiController {
         return ResponseEntity.ok(successResponse);
     }
 
-
-
     @PostMapping("/indexPage")
     public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
         Map<String, Object> response = new HashMap<>();
@@ -110,10 +107,6 @@ public class ApiController {
         }
     }
 
-
-
-
-
     @GetMapping("/search")
     public ResponseEntity<SearchResponse> search(
             @RequestParam String query,
@@ -135,7 +128,4 @@ public class ApiController {
                     .body(new SearchResponse("Ошибка при выполнении поиска"));
         }
     }
-
-
-
 }

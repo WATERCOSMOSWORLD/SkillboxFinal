@@ -12,12 +12,14 @@ import searchengine.repository.IndexRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageRepository;
 import java.util.HashSet;
+import org.springframework.context.annotation.Lazy;
 
 import searchengine.repository.SiteRepository;
 import java.time.LocalDateTime;
 import java.util.concurrent.ForkJoinPool;
 
 @Service
+@Lazy
 public class PageIndexingService {
     private static final Logger logger = LoggerFactory.getLogger(PageIndexingService.class);
     private final IndexingService indexingService;
@@ -27,7 +29,7 @@ public class PageIndexingService {
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
 
-    public PageIndexingService(PageRepository pageRepository,IndexingService indexingService, LemmaRepository lemmaRepository,IndexRepository indexRepository, SiteRepository siteRepository, SitesList sitesList) {
+    public PageIndexingService(PageRepository pageRepository,@Lazy IndexingService indexingService, LemmaRepository lemmaRepository,IndexRepository indexRepository, SiteRepository siteRepository, SitesList sitesList) {
         this.pageRepository = pageRepository;
         this.siteRepository = siteRepository;
         this.indexingService = indexingService;

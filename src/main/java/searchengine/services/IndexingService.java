@@ -19,8 +19,12 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.context.annotation.Lazy;
 
+@Lazy
 @Service
+
+
 public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
@@ -36,7 +40,7 @@ public class IndexingService {
     private ExecutorService executorService;
     private ForkJoinPool forkJoinPool;
 
-    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository,IndexingService indexingService, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
+    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository,@Lazy IndexingService indexingService, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
         this.sitesList = sitesList;
         this.indexingService = indexingService;
         this.siteRepository = siteRepository;

@@ -23,20 +23,24 @@ import java.util.concurrent.RecursiveAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
+import org.springframework.context.annotation.Lazy;
 
+
+@Lazy
 public class PageCrawler extends RecursiveAction {
     private static final Logger logger = LoggerFactory.getLogger(PageCrawler.class);
     private final Site site;
     private final String url;
     private final Set<String> visitedUrls;
     private final PageRepository pageRepository;
+    @Lazy
     private final IndexingService indexingService;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
     private final Set<String> visitedPages = new ConcurrentSkipListSet<>();
     private final SiteRepository siteRepository;
 
-    public PageCrawler(Site site,LemmaRepository lemmaRepository,SiteRepository siteRepository,IndexRepository indexRepository, String url, Set<String> visitedUrls, PageRepository pageRepository, IndexingService indexingService) {
+    public PageCrawler(Site site,LemmaRepository lemmaRepository,SiteRepository siteRepository,IndexRepository indexRepository, String url, Set<String> visitedUrls, PageRepository pageRepository,@Lazy IndexingService indexingService) {
         this.site = site;
         this.url = url;
         this.visitedUrls = visitedUrls;
@@ -538,7 +542,6 @@ public class PageCrawler extends RecursiveAction {
         return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
     }
 
-
     @Transactional
     public void processPageContent(Page page) {
         try {
@@ -591,13 +594,8 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
-
-
-
     private String extractTextFromHtml(String html) {
         return Jsoup.parse(html).text();
     }
 
 }
-
-

@@ -1,5 +1,6 @@
 package searchengine.services;
 
+
 import org.springframework.stereotype.Service;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.search.SearchResult;
@@ -14,6 +15,7 @@ import java.util.stream.Collectors;
 import java.util.*;
 
 @Service
+
 public class SearchServiceImpl implements SearchService {
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
