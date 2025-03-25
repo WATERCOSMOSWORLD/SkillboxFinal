@@ -289,53 +289,6 @@ public class PageCrawler extends RecursiveAction {
     }
 
 
-
-    private void saveLemmasAndIndexes(Map<String, Integer> lemmaFrequencies, Page page) {
-        int newLemmas = 0;
-        int updatedLemmas = 0;
-        int savedIndexes = 0;
-
-        StringBuilder lemmaLog = new StringBuilder("Найденные леммы: ");
-
-        for (Map.Entry<String, Integer> entry : lemmaFrequencies.entrySet()) {
-            String lemmaText = entry.getKey();
-            int rank = entry.getValue();
-
-            lemmaLog.append(lemmaText).append(" (").append(rank).append("), ");
-
-            // Получаем список совпадений
-            List<Lemma> lemmas = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite());
-
-            Lemma lemma;
-            if (!lemmas.isEmpty()) { // Проверяем, есть ли в списке элементы
-                lemma = lemmas.get(0); // Берем первую найденную лемму
-                lemma.setFrequency(lemma.getFrequency() + 1);
-                updatedLemmas++;
-            } else {
-                lemma = new Lemma();
-                lemma.setLemma(lemmaText);
-                lemma.setSite(page.getSite());
-                lemma.setFrequency(1);
-                lemmaRepository.save(lemma);
-                newLemmas++;
-            }
-
-            Index index = new Index();
-            index.setPage(page);
-            index.setLemma(lemma);
-            index.setRank((float) rank);
-            indexRepository.save(index);
-            savedIndexes++;
-        }
-
-        logger.info(lemmaLog.toString());
-
-        logger.info("Страница '{}' обработана. Новых лемм: {}, Обновленных лемм: {}, Связок (индексов): {}",
-                page.getPath(), newLemmas, updatedLemmas, savedIndexes);
-    }
-
-
-
     private void processLinks(Document document) {
         Elements links = document.select("a[href]");
         List<PageCrawler> subtasks = new ArrayList<>();
@@ -465,7 +418,7 @@ public class PageCrawler extends RecursiveAction {
             processImageContent(page, contentType);
         } else if (contentType != null && contentType.contains("text/html")) {
             Document document = response.parse();
-            processHtmlContent(page, document);
+
         } else {
             processUnknownContent(page, contentType);
         }
@@ -478,18 +431,7 @@ public class PageCrawler extends RecursiveAction {
         logger.info("Изображение добавлено: {}", url);
     }
 
-    private void processHtmlContent(Page page, Document document) throws IOException {
-        String text = extractText(document);
-        Map<String, Integer> lemmaFrequencies = lemmatizeText(text);
 
-        page.setContent(text);
-        pageRepository.save(page);
-
-        saveLemmasAndIndexes(lemmaFrequencies, page);
-        logger.info("HTML-страница добавлена: {}", url);
-
-        processLinks(document);
-    }
 
     private void processUnknownContent(Page page, String contentType) {
         page.setContent("Unhandled content type: " + contentType);

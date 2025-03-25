@@ -7,7 +7,10 @@ import lombok.AllArgsConstructor;
 import jakarta.persistence.Index;  // For Javax Persistence
 
 @Entity
-@Table(name = "lemma", indexes = @Index(name = "idx_lemma", columnList = "lemma"))
+@Table(name = "lemma", indexes = {
+        @Index(name = "idx_lemma", columnList = "lemma"),
+        @Index(name = "idx_site_id", columnList = "site_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -27,4 +30,11 @@ public class Lemma {
 
     @Column(name = "frequency", nullable = false)
     private Integer frequency;
+
+    // Конструктор, который будет использоваться в методе
+    public Lemma(Site site, String lemma, Integer frequency) {
+        this.site = site;
+        this.lemma = lemma;
+        this.frequency = frequency;
+    }
 }

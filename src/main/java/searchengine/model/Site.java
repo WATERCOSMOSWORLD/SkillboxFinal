@@ -7,6 +7,8 @@ import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 
 @Entity
 @Table(
@@ -40,5 +42,6 @@ public class Site {
     private String name;
 
     @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore // Если вы хотите игнорировать это поле при сериализации
     private List<Page> pages = new ArrayList<>();
 }
