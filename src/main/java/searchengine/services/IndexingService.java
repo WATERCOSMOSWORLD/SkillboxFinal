@@ -188,15 +188,18 @@ public class IndexingService {
         }
     }
 
-
-
-
     private void updateSiteStatusToIndexed(searchengine.model.Site site) {
+        if (site.getStatus() == IndexingStatus.FAILED) {
+            logger.warn("Сайт {} имеет ошибку, статус INDEXED не устанавливается.", site.getUrl());
+            return;
+        }
+
         site.setStatus(IndexingStatus.INDEXED);
         site.setStatusTime(LocalDateTime.now());
         siteRepository.save(site);
         logger.info("Сайт {} изменил статус на INDEXED.", site.getUrl());
     }
+
 
     private void handleIndexingError(String siteUrl, Exception e) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
@@ -231,7 +234,6 @@ public class IndexingService {
     public boolean isSiteIndexing(String url) {
         return indexingTasks.getOrDefault(url, false);
     }
-
 
     public boolean checkAndUpdateStatus(String message) {
         if (!indexingInProgress) {

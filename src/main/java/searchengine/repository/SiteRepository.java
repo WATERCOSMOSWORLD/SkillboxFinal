@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import java.util.Optional;
 
 @Repository
-public interface SiteRepository extends JpaRepository<Site, Integer> {
+public interface SiteRepository extends JpaRepository<Site,List> {
 
     Site findByUrl(String url);
 

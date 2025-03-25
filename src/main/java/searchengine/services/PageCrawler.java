@@ -13,7 +13,7 @@ import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
 import java.io.IOException;
-import java.net.URL;
+
 import searchengine.repository.SiteRepository;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -129,25 +129,17 @@ public class PageCrawler extends RecursiveAction {
 
             Connection.Response response = fetchPageContent();
             if (response != null) {
-                handleResponse(response);
+                // Удален вызов handleResponse(response)
             }
         } catch (IOException | InterruptedException e) {
             handleException(e);
         } finally {
             finalizeIndexing();
-        }}
+        }
+    }
 
     private boolean shouldProcessUrl() {
         return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
-    }
-
-    private void processPageContent() throws IOException, InterruptedException {
-        applyRequestDelay();
-        if (!checkAndLogStopCondition("Перед запросом")) return;
-        Connection.Response response = fetchPageContent();
-        if (response != null) {
-            processFetchedContent(response);
-        }
     }
 
     private void handleException(Exception e) {
@@ -193,46 +185,7 @@ public class PageCrawler extends RecursiveAction {
         logger.info("Индексация завершена для URL: {}", url);
     }
 
-    private void handleResponse(Connection.Response response) throws IOException {
-        String contentType = response.contentType();
-        int statusCode = response.statusCode();
-        String path = new URL(url).getPath();
 
-        // Проверяем, существует ли уже такая страница
-        if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
-            logger.info("Страница уже существует и была пропущена: {}", url);
-            return;
-        }
-
-        // Создаём объект Page
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(path);
-        page.setCode(statusCode);
-
-        // Обрабатываем контент в зависимости от типа
-        if (contentType != null && contentType.startsWith("image/")) {
-            // Обработка изображения
-            page.setContent("Image content: " + contentType);
-            pageRepository.save(page);
-            logger.info("Изображение успешно добавлено для URL: {}", url);
-        } else if (contentType != null && contentType.contains("text/html")) {
-            // Обработка HTML-страницы
-            try {
-                processPageContent();  // Вызов без параметров
-                logger.info("HTML-страница успешно обработана и добавлена для URL: {}", url);
-            } catch (InterruptedException e) {
-                // Обработка исключения InterruptedException
-                Thread.currentThread().interrupt();  // Восстановление состояния прерывания
-                logger.error("Индексация страницы была прервана для URL: {}", url, e);
-            }
-        } else {
-            // Обработка неизвестного типа контента
-            page.setContent("Unhandled content type: " + contentType);
-            pageRepository.save(page);
-            logger.info("Неизвестный тип контента был обработан и добавлен для URL: {}", url);
-        }
-    }
 
     private Map<String, Integer> lemmatizeText(String text) throws IOException {
         Map<String, Integer> lemmaFrequencies = new HashMap<>();
@@ -279,46 +232,6 @@ public class PageCrawler extends RecursiveAction {
         }
         return true;
     }
-
-
-    private void processFetchedContent(Connection.Response response) throws IOException {
-        String contentType = response.contentType();
-        int statusCode = response.statusCode();
-        String path = new URL(url).getPath();
-
-        if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
-            logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
-            return;
-        }
-
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(path);
-        page.setCode(statusCode);
-
-        if (contentType != null && contentType.startsWith("image/")) {
-            processImageContent(page, contentType);
-        } else if (contentType != null && contentType.contains("text/html")) {
-            Document document = response.parse();
-
-        } else {
-            processUnknownContent(page, contentType);
-        }
-    }
-
-
-    private void processImageContent(Page page, String contentType) {
-        page.setContent("Image content: " + contentType);
-        pageRepository.save(page);
-        logger.info("Изображение добавлено: {}", url);
-    }
-
-    private void processUnknownContent(Page page, String contentType) {
-        page.setContent("Unhandled content type: " + contentType);
-        pageRepository.save(page);
-        logger.info("Контент с неизвестным типом добавлен: {}", url);
-    }
-
 
     private void indexFilesAndImages(Document document) {
         Elements images = document.select("img[src]");

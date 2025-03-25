@@ -23,11 +23,6 @@ spring:
     init:
       mode: always
 
-
-  main:
-    allow-circular-references: true
-
-
 indexing-settings:
   sites:
     - url: https://www.playback.ru
