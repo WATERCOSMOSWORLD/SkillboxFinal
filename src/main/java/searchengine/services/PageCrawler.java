@@ -4,16 +4,14 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
-import org.springframework.transaction.annotation.Transactional;
+
 import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
-import org.apache.lucene.morphology.LuceneMorphology;
-import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
-import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
+
 import java.io.IOException;
-import org.springframework.transaction.annotation.Propagation;
+import java.util.concurrent.ForkJoinPool;
 import searchengine.repository.SiteRepository;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -96,7 +94,8 @@ public class PageCrawler extends RecursiveAction {
 
             pageRepository.save(page);
 
-            processPageContent(page);
+            // Теперь вызываем processPageContent через indexingService
+            indexingService.processPageContent(page);
 
             long endTime = System.currentTimeMillis();
             logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
@@ -140,6 +139,7 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
+
     private boolean shouldProcessUrl() {
         return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
     }
@@ -181,36 +181,6 @@ public class PageCrawler extends RecursiveAction {
     private void finalizeIndexing() {
         indexingService.checkAndUpdateStatus(site.getUrl());
         logger.info("Индексация завершена для URL: {}", url);
-    }
-
-
-
-    private Map<String, Integer> lemmatizeText(String text) throws IOException {
-        Map<String, Integer> lemmaFrequencies = new HashMap<>();
-
-        LuceneMorphology russianMorph = new RussianLuceneMorphology();
-        LuceneMorphology englishMorph = new EnglishLuceneMorphology();
-
-        String[] words = text.toLowerCase().split("\\P{L}+");
-
-        for (String word : words) {
-            if (word.length() < 2) continue;
-
-            List<String> normalForms;
-            if (word.matches("[а-яё]+")) {
-                normalForms = russianMorph.getNormalForms(word);
-            } else if (word.matches("[a-z]+")) {
-                normalForms = englishMorph.getNormalForms(word);
-            } else {
-                continue;
-            }
-
-            for (String lemma : normalForms) {
-                lemmaFrequencies.put(lemma, lemmaFrequencies.getOrDefault(lemma, 0) + 1);
-            }
-        }
-
-        return lemmaFrequencies;
     }
 
     private void handleError(IOException e) {
@@ -275,48 +245,24 @@ public class PageCrawler extends RecursiveAction {
         return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processPageContent(Page page) {
+    public static void startCrawling(Site site, String startUrl,
+                                     LemmaRepository lemmaRepository,
+                                     SiteRepository siteRepository,
+                                     IndexRepository indexRepository,
+                                     PageRepository pageRepository,
+                                     IndexingService indexingService) {  // Добавляем параметр
+        ForkJoinPool forkJoinPool = new ForkJoinPool();
         try {
-            String text = extractTextFromHtml(page.getContent());
-            Map<String, Integer> lemmas = lemmatizeText(text);
-
-            Set<String> processedLemmas = new HashSet<>();
-            List<Lemma> lemmasToSave = new ArrayList<>();
-            List<Index> indexesToSave = new ArrayList<>();
-
-            for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
-                String lemmaText = entry.getKey();
-                int count = entry.getValue();
-
-                logger.info("🔤 Найдена лемма: '{}', частота: {}", lemmaText, count);
-
-                List<Lemma> foundLemmas = lemmaRepository.findByLemma(lemmaText);
-                Lemma lemma;
-
-                if (foundLemmas.isEmpty()) {
-                    lemma = new Lemma(null, page.getSite(), lemmaText, 1);
-                } else {
-                    lemma = foundLemmas.get(0);
-                    lemma.setFrequency(lemma.getFrequency() + 1);
-                }
-
-                lemmasToSave.add(lemma);
-
-                Index index = new Index(null, page, lemma, (float) count);
-                indexesToSave.add(index);
-            }
-
-            lemmaRepository.saveAll(lemmasToSave);
-            indexRepository.saveAll(indexesToSave);
-
-        } catch (IOException e) {
-            logger.error("Ошибка при обработке страницы: {}", page.getPath(), e);
-            throw new RuntimeException("Ошибка при извлечении текста с страницы", e);
+            forkJoinPool.invoke(new PageCrawler(
+                    site, lemmaRepository, siteRepository, indexRepository,
+                    startUrl, new HashSet<>(), pageRepository, indexingService // Передаём indexingService
+            ));
+        } finally {
+            forkJoinPool.shutdown();
         }
     }
 
-    private String extractTextFromHtml(String html) {
-        return Jsoup.parse(html).text();
-    }
+
+
+
 }

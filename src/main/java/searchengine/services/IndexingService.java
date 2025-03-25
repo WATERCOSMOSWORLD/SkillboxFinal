@@ -1,18 +1,25 @@
 package searchengine.services;
 
+import org.apache.lucene.morphology.LuceneMorphology;
+import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import org.springframework.transaction.annotation.Propagation;
 import searchengine.config.SitesList;
-import searchengine.model.IndexingStatus;
+import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
+
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
-import searchengine.model.Site ;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
@@ -24,12 +31,10 @@ import org.springframework.context.annotation.Lazy;
 @Lazy
 @Service
 
-
 public class IndexingService {
 
     private static final Logger logger = LoggerFactory.getLogger(IndexingService.class);
     private final ConcurrentHashMap<String, Boolean> indexingTasks = new ConcurrentHashMap<>();
-    private final IndexingService indexingService;
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
@@ -40,9 +45,8 @@ public class IndexingService {
     private ExecutorService executorService;
     private ForkJoinPool forkJoinPool;
 
-    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository,@Lazy IndexingService indexingService, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
+    public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
         this.sitesList = sitesList;
-        this.indexingService = indexingService;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.indexRepository = indexRepository;
@@ -116,7 +120,20 @@ public class IndexingService {
                         newSite.setStatus(IndexingStatus.INDEXING);
                         newSite.setStatusTime(LocalDateTime.now());
                         siteRepository.save(newSite);
-                        crawlAndIndexPages(newSite, site.getUrl());
+
+                        // Вместо crawlAndIndexPages вызываем startCrawling
+                        PageCrawler.startCrawling(
+                                newSite,
+                                site.getUrl(),
+                                lemmaRepository,
+                                siteRepository,
+                                indexRepository,
+                                pageRepository,
+                                this  // Передаём текущий экземпляр IndexingService
+                        );
+
+
+
                         if (indexingInProgress) {
                             updateSiteStatusToIndexed(newSite);
                         } else {
@@ -143,27 +160,6 @@ public class IndexingService {
             }
         }
     }
-
-
-    private void crawlAndIndexPages(Site site, String startUrl) {
-        ForkJoinPool forkJoinPool = new ForkJoinPool();  // инициализация ForkJoinPool
-        try {
-            // Запуск PageCrawler через ForkJoinPool
-            forkJoinPool.invoke(new PageCrawler(
-                    site,
-                    lemmaRepository,  // передаем LemmaRepository
-                    siteRepository,   // передаем SiteRepository
-                    indexRepository,  // передаем IndexRepository
-                    startUrl,         // начальный URL
-                    new HashSet<>(),  // множество посещенных URL
-                    pageRepository,   // передаем PageRepository
-                    indexingService   // передаем IndexingService
-            ));
-        } finally {
-            forkJoinPool.shutdown();  // убедитесь, что пул потоков будет завершен
-        }
-    }
-
 
     @Transactional
     private void deleteSiteData(String siteUrl) {
@@ -241,5 +237,79 @@ public class IndexingService {
             return false;
         }
         return true;
+    }
+
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processPageContent(Page page) {
+        try {
+            String text = extractTextFromHtml(page.getContent());
+            Map<String, Integer> lemmas = lemmatizeText(text);
+
+            Set<String> processedLemmas = new HashSet<>();
+            List<Lemma> lemmasToSave = new ArrayList<>();
+            List<Index> indexesToSave = new ArrayList<>();
+
+            for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
+                String lemmaText = entry.getKey();
+                int count = entry.getValue();
+
+                logger.info("🔤 Найдена лемма: '{}', частота: {}", lemmaText, count);
+
+                // Проверяем, есть ли лемма в кэше (уменьшаем SELECT-запросы)
+                if (!processedLemmas.add(lemmaText)) {
+                    continue;
+                }
+
+                Lemma lemma = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite())
+                        .orElseGet(() -> new Lemma(null, page.getSite(), lemmaText, 0));
+
+                lemma.setFrequency(lemma.getFrequency() + 1);
+                lemmasToSave.add(lemma);
+
+                Index index = new Index(null, page, lemma, (float) count);
+                indexesToSave.add(index);
+            }
+
+            lemmaRepository.saveAll(lemmasToSave);
+            indexRepository.saveAll(indexesToSave);
+
+        } catch (IOException e) {
+            logger.error("❌ Ошибка при обработке страницы: {}", page.getPath(), e);
+            throw new RuntimeException("Ошибка при извлечении текста с страницы", e);
+        }
+    }
+
+    private String extractTextFromHtml(String html) {
+        return Jsoup.parse(html).text();
+    }
+
+
+    private Map<String, Integer> lemmatizeText(String text) throws IOException {
+        Map<String, Integer> lemmaFrequencies = new HashMap<>();
+
+        LuceneMorphology russianMorph = new RussianLuceneMorphology();
+        LuceneMorphology englishMorph = new EnglishLuceneMorphology();
+
+        String[] words = text.toLowerCase().split("\\P{L}+");
+
+        for (String word : words) {
+            if (word.length() < 2) continue;
+
+            List<String> normalForms;
+            if (word.matches("[а-яё]+")) {
+                normalForms = russianMorph.getNormalForms(word);
+            } else if (word.matches("[a-z]+")) {
+                normalForms = englishMorph.getNormalForms(word);
+            } else {
+                continue;
+            }
+
+            for (String lemma : normalForms) {
+                lemmaFrequencies.put(lemma, lemmaFrequencies.getOrDefault(lemma, 0) + 1);
+            }
+        }
+
+        return lemmaFrequencies;
     }
 }

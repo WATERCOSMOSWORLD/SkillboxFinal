@@ -18,10 +18,6 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
     @Query("DELETE FROM Page p WHERE p.site.id = :siteId")
     int deleteAllBySiteId(int siteId);
 
-    @Query("SELECT COUNT(p) > 0 FROM Page p WHERE p.path = :path AND p.site.id = :siteId")
-    boolean existsByPathAndSiteId(String path, int siteId);
-
-
 
     @Query("SELECT DISTINCT p FROM Page p WHERE p.id IN " +
             "(SELECT i.page.id FROM Index i WHERE i.lemma.lemma IN :lemmas)")
