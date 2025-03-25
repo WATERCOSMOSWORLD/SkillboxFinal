@@ -18,11 +18,12 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     List<Site> findAllByStatus(IndexingStatus status);
     List<Site> findAllByUrl(String url);
 
+    boolean existsByStatus(IndexingStatus status);
 
     @Modifying
     @Transactional
     void delete(Site site);
 
     long countByStatus(IndexingStatus status);
-    Optional<Site> findFirstByUrl(String url);
+
 }

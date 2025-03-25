@@ -56,7 +56,7 @@ public class PageCrawler extends RecursiveAction {
 
             Connection.Response response = fetchPageContent();
             if (response != null) {
-                processFetchedContent(response);
+                handleResponse(response);  // Добавляем вызов метода handleResponse для обработки ответа
             }
         } catch (IOException | InterruptedException e) {
             handleException(e);
@@ -130,34 +130,39 @@ public class PageCrawler extends RecursiveAction {
         int statusCode = response.statusCode();
         String path = new URL(url).getPath();
 
+        // Проверяем, существует ли уже такая страница
         if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
-            logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
+            logger.info("Страница уже существует и была пропущена: {}", url);
             return;
         }
 
+        // Создаём объект Page
         Page page = new Page();
         page.setSite(site);
         page.setPath(path);
         page.setCode(statusCode);
 
+        // Обрабатываем контент в зависимости от типа
         if (contentType != null && contentType.startsWith("image/")) {
+            // Обработка изображения
             page.setContent("Image content: " + contentType);
-            logger.info("Изображение добавлено: {}", url);
-        } else if (contentType != null && contentType.contains("text/html")) {
-            Document document = response.parse();
-            String text = extractText(document);
-            Map<String, Integer> lemmaFrequencies = lemmatizeText(text);
-
-            page.setContent(text);
             pageRepository.save(page);
-
-            saveLemmasAndIndexes(lemmaFrequencies, page);
-
-            logger.info("HTML-страница добавлена: {}", url);
-            processLinks(document);
+            logger.info("Изображение успешно добавлено для URL: {}", url);
+        } else if (contentType != null && contentType.contains("text/html")) {
+            // Обработка HTML-страницы
+            try {
+                processPageContent();  // Вызов без параметров
+                logger.info("HTML-страница успешно обработана и добавлена для URL: {}", url);
+            } catch (InterruptedException e) {
+                // Обработка исключения InterruptedException
+                Thread.currentThread().interrupt();  // Восстановление состояния прерывания
+                logger.error("Индексация страницы была прервана для URL: {}", url, e);
+            }
         } else {
+            // Обработка неизвестного типа контента
             page.setContent("Unhandled content type: " + contentType);
-            logger.info("Контент с неизвестным типом добавлен: {}", url);
+            pageRepository.save(page);
+            logger.info("Неизвестный тип контента был обработан и добавлен для URL: {}", url);
         }
     }
 

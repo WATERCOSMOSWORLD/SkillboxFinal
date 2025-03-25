@@ -6,7 +6,6 @@ import org.springframework.transaction.annotation.Transactional;
 import searchengine.model.Lemma;
 import searchengine.model.Site;
 import org.springframework.data.jpa.repository.JpaRepository;
-import java.util.Optional;
 import org.springframework.data.repository.query.Param;
 import java.util.List;
 
