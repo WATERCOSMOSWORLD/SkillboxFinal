@@ -31,10 +31,5 @@ public class Lemma {
     @Column(name = "frequency", nullable = false)
     private Integer frequency;
 
-    // Конструктор, который будет использоваться в методе
-    public Lemma(Site site, String lemma, Integer frequency) {
-        this.site = site;
-        this.lemma = lemma;
-        this.frequency = frequency;
-    }
+
 }

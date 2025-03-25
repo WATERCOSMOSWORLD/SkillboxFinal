@@ -33,27 +33,22 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public StatisticsResponse getStatistics() {
-        // Создаём итоговые данные
         TotalStatistics total = new TotalStatistics();
         total.setSites(sites.getSites().size());
         total.setPages(0);
         total.setLemmas(0);
         total.setIndexing(indexingService.isIndexingInProgress());
 
-        // Список подробной статистики
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
 
-        // Итерация по конфигурации сайтов
         for (ConfigSite siteConfig : sites.getSites()) {
             DetailedStatisticsItem item = createDetailedStatisticsItem(siteConfig);
             detailed.add(item);
 
-            // Обновление общей статистики
             total.setPages(total.getPages() + item.getPages());
             total.setLemmas(total.getLemmas() + item.getLemmas());
         }
 
-        // Формируем и возвращаем статистику
         StatisticsData data = new StatisticsData();
         data.setTotal(total);
         data.setDetailed(detailed);
@@ -64,6 +59,7 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         return response;
     }
+
 
     private DetailedStatisticsItem createDetailedStatisticsItem(ConfigSite siteConfig) {
         DetailedStatisticsItem item = new DetailedStatisticsItem();
@@ -94,13 +90,18 @@ public class StatisticsServiceImpl implements StatisticsService {
         return item;
     }
 
-    // Метод для обновления статуса сайта
     private void updateSiteStatus(Site site) {
+        // Если сайт в процессе индексации, но индексация завершена
         if (site.getStatus() == IndexingStatus.INDEXING && !indexingService.isSiteIndexing(site.getUrl())) {
             site.setStatus(IndexingStatus.INDEXED);
             siteRepository.save(site);
+        } else if (site.getStatus() != IndexingStatus.INDEXING && indexingService.isSiteIndexing(site.getUrl())) {
+            // Если сайт не в процессе индексации, но индексация начинается
+            site.setStatus(IndexingStatus.INDEXING);
+            siteRepository.save(site);
         }
     }
+
 
     // Метод для получения времени статуса сайта
     private long getStatusTime(Site site) {

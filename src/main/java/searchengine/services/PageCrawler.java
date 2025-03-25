@@ -91,7 +91,7 @@ public class PageCrawler extends RecursiveAction {
             // Если это HTML-страница, сохраняем ее содержимое и индексируем файлы и изображения
             if (contentType.startsWith("text/html")) {
                 page.setContent(document.html());
-                indexFilesAndImages(document);
+                indexFilesAndImages(document);  // Индексация файлов и изображений
             } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
                 page.setContent("FILE: " + url);
             }
@@ -149,10 +149,6 @@ public class PageCrawler extends RecursiveAction {
             finalizeIndexing(); // Завершаем индексацию
         }
     }
-
-
-
-
 
 
     private boolean shouldProcessUrl() {
@@ -539,5 +535,4 @@ public class PageCrawler extends RecursiveAction {
     private String extractTextFromHtml(String html) {
         return Jsoup.parse(html).text();
     }
-
 }
