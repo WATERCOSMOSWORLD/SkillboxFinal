@@ -35,11 +35,13 @@ public class PageCrawler extends RecursiveAction {
     private final IndexRepository indexRepository;
     private final Set<String> visitedPages = new ConcurrentSkipListSet<>();
     private final SiteRepository siteRepository;
-    private final SitesList sitesList; // Add this field to store the list of configured sites
+    private final SitesList sitesList;
+    private final int depth;  // <-- Добавляем глубину
 
     public PageCrawler(Site site, LemmaRepository lemmaRepository, SiteRepository siteRepository,
                        IndexRepository indexRepository, String url, Set<String> visitedUrls,
-                       PageRepository pageRepository, IndexingService indexingService, SitesList sitesList) {
+                       PageRepository pageRepository, IndexingService indexingService,
+                       SitesList sitesList, int depth) {  // <-- Добавляем параметр depth
         this.site = site;
         this.url = url;
         this.visitedUrls = visitedUrls;
@@ -48,20 +50,21 @@ public class PageCrawler extends RecursiveAction {
         this.lemmaRepository = lemmaRepository;
         this.indexingService = indexingService;
         this.siteRepository = siteRepository;
-        this.sitesList = sitesList;  // Initialize the sitesList
+        this.sitesList = sitesList;
+        this.depth = depth;  // <-- Сохраняем глубину
     }
 
     @Override
     protected void compute() {
-        // Skip already visited pages or those that should be skipped
-        if (!visitedPages.add(url) || shouldSkipUrl(url) || pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
+        if (depth > 3 || !visitedPages.add(url) || shouldSkipUrl(url) ||
+                pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
             return;
         }
 
         long startTime = System.currentTimeMillis();
 
         try {
-            // Add random delay to prevent overloading the server (simulate human behavior)
+            // Добавляем задержку для предотвращения перегрузки сервера
             long delay = 4000 + (long) (Math.random() * 8000);
             try {
                 Thread.sleep(delay);
@@ -71,57 +74,54 @@ public class PageCrawler extends RecursiveAction {
                 return;
             }
 
-            // Update the site's status time
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
 
-            logger.info("🌍 Загружаем страницу: {}", url);
+            logger.info("🌍 Загружаем страницу (глубина {}): {}", depth, url);
 
-            // Fetch and parse the document using Jsoup
+            // Получаем и парсим страницу
             try {
                 Document document = Jsoup.connect(url)
                         .userAgent("Mozilla/5.0")
                         .referrer("http://www.google.com")
                         .ignoreContentType(true)
-                        .timeout(10000) // Set timeout to 10 seconds
+                        .timeout(10000)
                         .get();
 
-                // Get response code and content type
+                // Получаем код ответа и тип контента
                 String contentType = document.connection().response().contentType();
                 int responseCode = document.connection().response().statusCode();
 
-                // Create a new Page object for storing data
                 Page page = new Page();
                 page.setPath(url.replace(site.getUrl(), ""));
                 page.setSite(site);
                 page.setCode(responseCode);
 
-                // Store content and index files/images based on content type
                 if (contentType.startsWith("text/html")) {
                     page.setContent(document.html());
-                    indexFilesAndImages(document);  // Process files/images if needed
+                    indexFilesAndImages(document);
                 } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
-                    page.setContent("FILE: " + url);  // Mark the URL as a file
+                    page.setContent("FILE: " + url);
                 }
 
-                // Save the page to the repository
                 pageRepository.save(page);
-
-                // Process the page content using the indexing service
                 indexingService.processPageContent(page);
 
                 long endTime = System.currentTimeMillis();
-                logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
+                logger.info("✅ [{}] Проиндексировано за {} мс (глубина {}): {}",
+                        responseCode, (endTime - startTime), depth, url);
 
-                // Process the links from the page (instead of manually extracting and processing links)
-                processLinks(document);  // Call processLinks here to handle the link extraction and further task creation
+                // 🔥 Запускаем обработку внутренних ссылок только если глубина < 3
+                if (depth < 3) {
+                    processLinks(document, depth + 1);
+                }
 
             } catch (IOException e) {
                 logger.warn("⚠️ Тайм-аут при загрузке: {}. Пропускаем.", url);
             }
 
         } finally {
-            finalizeIndexing();  // Ensure any cleanup or final processing is done
+            finalizeIndexing();
         }
     }
 
@@ -197,9 +197,11 @@ public class PageCrawler extends RecursiveAction {
                     startUrl,                      // Starting URL for indexing
                     new HashSet<>(),               // Set of visited URLs
                     pageRepository,                // PageRepository object
-                    indexingService,               // IndexingService object (for isInternalLink)
-                    sitesList                      // SitesList object
+                    indexingService,               // IndexingService object
+                    sitesList,                      // SitesList object
+                    0                               // <-- Начальная глубина (0)
             ));
+
         } finally {
             forkJoinPool.shutdown();
         }
@@ -239,7 +241,12 @@ public class PageCrawler extends RecursiveAction {
                 .anyMatch(configSite -> url.startsWith(configSite.getUrl()));
     }
 
-    private void processLinks(Document document) {
+    private void processLinks(Document document, int currentDepth) {
+        if (currentDepth >= 3) {
+            logger.debug("Достигнута максимальная глубина индексации ({}). Остановка обработки ссылок.", currentDepth);
+            return;
+        }
+
         Elements links = document.select("a[href]");
         List<PageCrawler> subtasks = new ArrayList<>();
 
@@ -297,9 +304,10 @@ public class PageCrawler extends RecursiveAction {
                                 visitedUrls,                   // Set of visited URLs
                                 pageRepository,                // PageRepository object
                                 indexingService,               // IndexingService object
-                                sitesList                      // SitesList object
+                                sitesList,                     // SitesList object
+                                currentDepth + 1               // Передаём увеличенную глубину
                         ));
-                        logger.debug("Добавлена ссылка в обработку: {}", childUrl);
+                        logger.debug("Добавлена ссылка в обработку (глубина {}): {}", currentDepth + 1, childUrl);
                     } else {
                         logger.debug("Ссылка уже обработана: {}", childUrl);
                     }
@@ -312,6 +320,7 @@ public class PageCrawler extends RecursiveAction {
             invokeAll(subtasks);
         }
     }
+
 
 
     private void savePhoneLink(String telUrl) {

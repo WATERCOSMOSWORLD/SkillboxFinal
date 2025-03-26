@@ -71,8 +71,10 @@ public class PageIndexingService {
                     new HashSet<>(),               // множество посещенных URL
                     pageRepository,                // объект PageRepository
                     indexingService,               // объект IndexingService
-                    sitesList                      // передаем список сайтов
+                    sitesList,                     // передаем список сайтов
+                    0                               // <-- Начальная глубина (0)
             ));
+
 
             site.setStatus(IndexingStatus.INDEXED);
             site.setStatusTime(LocalDateTime.now());
