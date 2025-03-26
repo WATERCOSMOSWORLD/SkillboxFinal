@@ -16,10 +16,8 @@ import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.SiteRepository;
 import org.springframework.context.annotation.Lazy;
-
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.ArrayList;
 
 @Service
 @RequiredArgsConstructor
@@ -52,7 +50,6 @@ public class StatisticsServiceImpl implements StatisticsService {
                 })
                 .toList();
 
-        // Используем сеттеры, так как нет конструктора с параметрами
         StatisticsData data = new StatisticsData();
         data.setTotal(total);
         data.setDetailed(detailed);
@@ -63,7 +60,6 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         return response;
     }
-
 
     private DetailedStatisticsItem createDetailedStatisticsItem(ConfigSite siteConfig) {
         DetailedStatisticsItem item = new DetailedStatisticsItem();
@@ -107,12 +103,16 @@ public class StatisticsServiceImpl implements StatisticsService {
             return;
         }
 
-        if (site.getStatus() == IndexingStatus.INDEXING && !isCurrentlyIndexing) {
-            logger.info("Индексация завершена для сайта: {}", site.getUrl());
-            updateSiteStatus(site, IndexingStatus.INDEXED);
-        } else if (site.getStatus() != IndexingStatus.INDEXING && isCurrentlyIndexing) {
-            logger.info("Индексация началась для сайта: {}", site.getUrl());
-            updateSiteStatus(site, IndexingStatus.INDEXING);
+        if (isCurrentlyIndexing) {
+            if (site.getStatus() != IndexingStatus.INDEXING) {
+                logger.info("Индексация началась для сайта: {}", site.getUrl());
+                updateSiteStatus(site, IndexingStatus.INDEXING);
+            }
+        } else {
+            if (site.getStatus() == IndexingStatus.INDEXING) {
+                logger.info("Индексация завершена для сайта: {}", site.getUrl());
+                updateSiteStatus(site, IndexingStatus.INDEXED);
+            }
         }
     }
 

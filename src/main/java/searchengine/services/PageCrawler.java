@@ -4,7 +4,6 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
-
 import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
@@ -27,11 +26,10 @@ import org.springframework.context.annotation.Lazy;
 public class PageCrawler extends RecursiveAction {
     private static final Logger logger = LoggerFactory.getLogger(PageCrawler.class);
     private final Site site;
+    private final IndexingService indexingService;
     private final String url;
     private final Set<String> visitedUrls;
     private final PageRepository pageRepository;
-    @Lazy
-    private final IndexingService indexingService;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
     private final Set<String> visitedPages = new ConcurrentSkipListSet<>();
@@ -42,9 +40,9 @@ public class PageCrawler extends RecursiveAction {
         this.url = url;
         this.visitedUrls = visitedUrls;
         this.pageRepository = pageRepository;
-        this.indexingService = indexingService;
         this.indexRepository = indexRepository;
         this.lemmaRepository = lemmaRepository;
+        this.indexingService = indexingService;
         this.siteRepository = siteRepository;
     }
 
@@ -138,6 +136,7 @@ public class PageCrawler extends RecursiveAction {
             finalizeIndexing();
         }
     }
+
 
     private boolean shouldProcessUrl() {
         return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
@@ -258,4 +257,5 @@ public class PageCrawler extends RecursiveAction {
             forkJoinPool.shutdown();
         }
     }
+
 }

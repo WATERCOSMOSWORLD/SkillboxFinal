@@ -161,6 +161,8 @@ public class IndexingService {
         }
     }
 
+
+
     @Transactional
     private void deleteSiteData(String siteUrl) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
@@ -239,7 +241,6 @@ public class IndexingService {
         return true;
     }
 
-
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processPageContent(Page page) {
         try {
@@ -256,27 +257,48 @@ public class IndexingService {
 
                 logger.info("🔤 Найдена лемма: '{}', частота: {}", lemmaText, count);
 
-                // Проверяем, есть ли лемма в кэше (уменьшаем SELECT-запросы)
+                // Проверяем, была ли лемма уже обработана
                 if (!processedLemmas.add(lemmaText)) {
+                    // Пропускаем лемму, если она уже была обработана
+                    logger.info("Лемма '{}' уже была обработана, пропускаем.", lemmaText);
                     continue;
                 }
 
-                Lemma lemma = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite())
-                        .orElseGet(() -> new Lemma(null, page.getSite(), lemmaText, 0));
+                // Проверяем, существует ли эта лемма в базе данных
+                Optional<Lemma> existingLemmaOpt = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite());
+                if (existingLemmaOpt.isPresent()) {
+                    // Лемма уже существует, обновляем её частоту
+                    Lemma existingLemma = existingLemmaOpt.get();
+                    existingLemma.setFrequency(existingLemma.getFrequency() + count);  // Увеличиваем частоту
+                    lemmasToSave.add(existingLemma);  // Добавляем обновлённую лемму
+                    logger.info("Лемма '{}' уже существует в базе данных, обновляем частоту.", lemmaText);
+                    continue;  // Пропускаем создание новой леммы
+                }
 
-                lemma.setFrequency(lemma.getFrequency() + 1);
+                // Если лемма новая, создаём её
+                Lemma lemma = new Lemma(null, page.getSite(), lemmaText, count);  // Задаём начальную частоту
                 lemmasToSave.add(lemma);
 
+                // Создаём индекс
                 Index index = new Index(null, page, lemma, (float) count);
                 indexesToSave.add(index);
             }
 
-            lemmaRepository.saveAll(lemmasToSave);
-            indexRepository.saveAll(indexesToSave);
+            // Сохраняем новые или обновлённые леммы и индексы
+            if (!lemmasToSave.isEmpty()) {
+                lemmaRepository.saveAll(lemmasToSave);
+            }
+
+            if (!indexesToSave.isEmpty()) {
+                indexRepository.saveAll(indexesToSave);
+            }
 
         } catch (IOException e) {
+            // Просто логируем ошибку, но не выбрасываем исключение, чтобы не прерывать выполнение
             logger.error("❌ Ошибка при обработке страницы: {}", page.getPath(), e);
-            throw new RuntimeException("Ошибка при извлечении текста с страницы", e);
+        } catch (Exception e) {
+            // Ловим любые другие исключения и логируем их
+            logger.error("Ошибка при обработке лемм и индексов: {}", e.getMessage(), e);
         }
     }
 
