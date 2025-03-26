@@ -100,6 +100,7 @@ public class IndexingService {
     }
 
 
+
     private void performIndexing() {
         List<searchengine.config.ConfigSite> sites = sitesList.getSites();
         if (sites == null || sites.isEmpty()) {
@@ -110,11 +111,20 @@ public class IndexingService {
         executorService = Executors.newFixedThreadPool(sites.size());
         try {
             for (searchengine.config.ConfigSite site : sites) {
-                // Ensure we only index sites from the configured list
+                if (!indexingInProgress) {
+                    logger.info("Индексация остановлена до завершения.");
+                    return;
+                }
+
                 if (isConfiguredSite(site.getUrl())) {
                     executorService.submit(() -> {
+                        if (!indexingInProgress) {
+                            logger.info("Индексация остановлена: {}", site.getUrl());
+                            return;
+                        }
+
                         logger.info("Индексация сайта: {} ({})", site.getName(), site.getUrl());
-                        startIndexingForSite(site.getUrl()); // Add the site to active tasks
+                        startIndexingForSite(site.getUrl());
                         try {
                             deleteSiteData(site.getUrl());
                             searchengine.model.Site newSite = new searchengine.model.Site();
@@ -124,20 +134,17 @@ public class IndexingService {
                             newSite.setStatusTime(LocalDateTime.now());
                             siteRepository.save(newSite);
 
-                            // Crawl and index the pages for the site
-                            // Make sure the SitesList instance is available
-                            SitesList sitesList = getSitesList();  // Replace with actual way to get SitesList
-
+                            SitesList sitesList = getSitesList();
 
                             PageCrawler.startCrawling(
-                                    newSite,                      // The new site to index
-                                    site.getUrl(),                 // URL to start from
-                                    lemmaRepository,               // LemmaRepository object
-                                    siteRepository,                // SiteRepository object
-                                    indexRepository,               // IndexRepository object
-                                    pageRepository,                // PageRepository object
-                                    this,                          // The current instance of IndexingService
-                                    sitesList                      // Pass SitesList as needed
+                                    newSite,
+                                    site.getUrl(),
+                                    lemmaRepository,
+                                    siteRepository,
+                                    indexRepository,
+                                    pageRepository,
+                                    this,
+                                    sitesList
                             );
 
                             if (indexingInProgress) {
@@ -148,7 +155,7 @@ public class IndexingService {
                         } catch (Exception e) {
                             handleIndexingError(site.getUrl(), e);
                         } finally {
-                            stopIndexingForSite(site.getUrl()); // Remove the site from active tasks
+                            stopIndexingForSite(site.getUrl());
                         }
                     });
                 } else {
@@ -169,6 +176,7 @@ public class IndexingService {
             }
         }
     }
+
 
     public SitesList getSitesList() {
         return this.sitesList;

@@ -56,7 +56,7 @@ public class PageCrawler extends RecursiveAction {
 
     @Override
     protected void compute() {
-        if (depth > 3 || !visitedPages.add(url) || shouldSkipUrl(url) ||
+        if (!indexingService.isIndexingInProgress() || depth > 3 || !visitedPages.add(url) || shouldSkipUrl(url) ||
                 pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
             return;
         }
@@ -74,6 +74,10 @@ public class PageCrawler extends RecursiveAction {
                 return;
             }
 
+            if (!indexingService.isIndexingInProgress()) {
+                return;
+            }
+
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
 
@@ -87,6 +91,10 @@ public class PageCrawler extends RecursiveAction {
                         .ignoreContentType(true)
                         .timeout(10000)
                         .get();
+
+                if (!indexingService.isIndexingInProgress()) {
+                    return;
+                }
 
                 // Получаем код ответа и тип контента
                 String contentType = document.connection().response().contentType();
@@ -112,7 +120,7 @@ public class PageCrawler extends RecursiveAction {
                         responseCode, (endTime - startTime), depth, url);
 
                 // 🔥 Запускаем обработку внутренних ссылок только если глубина < 3
-                if (depth < 3) {
+                if (depth < 3 && indexingService.isIndexingInProgress()) {
                     processLinks(document, depth + 1);
                 }
 
@@ -124,6 +132,7 @@ public class PageCrawler extends RecursiveAction {
             finalizeIndexing();
         }
     }
+
 
     private void finalizeIndexing() {
         indexingService.checkAndUpdateStatus(site.getUrl());
