@@ -2,6 +2,9 @@ package searchengine.services;
 
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
+import java.net.URI;
+
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import searchengine.model.*;
@@ -20,8 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
 import org.springframework.context.annotation.Lazy;
-import java.util.stream.Collectors;
-
 
 @Lazy
 public class PageCrawler extends RecursiveAction {
@@ -62,7 +63,7 @@ public class PageCrawler extends RecursiveAction {
 
         try {
             // Add random delay to prevent overloading the server (simulate human behavior)
-            long delay = 500 + (long) (Math.random() * 4500);
+            long delay = 4000 + (long) (Math.random() * 8000);
             try {
                 Thread.sleep(delay);
             } catch (InterruptedException e) {
@@ -111,26 +112,8 @@ public class PageCrawler extends RecursiveAction {
             long endTime = System.currentTimeMillis();
             logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
 
-            // Extract links from the page and create new crawling tasks
-            Elements links = document.select("a[href]");
-            List<PageCrawler> subTasks = links.stream()
-                    .map(link -> cleanUrl(link.absUrl("href")))
-                    .filter(link -> link.startsWith(site.getUrl()) && !shouldSkipUrl(link))
-                    .map(link -> new PageCrawler(
-                            site,
-                            lemmaRepository,
-                            siteRepository,
-                            indexRepository,
-                            link,
-                            visitedUrls,
-                            pageRepository,
-                            indexingService,
-                            sitesList // Ensure sitesList is passed here
-                    ))
-                    .collect(Collectors.toList());  // Collect the tasks in a list
-
-            logger.info("🔗 Найдено ссылок: {}", subTasks.size());
-            invokeAll(subTasks);  // Invoke all the subtasks concurrently
+            // Process the links from the page (instead of manually extracting and processing links)
+            processLinks(document);  // Call processLinks here to handle the link extraction and further task creation
 
         } catch (IOException e) {
             handleException("❌ Ошибка при загрузке", e);
@@ -153,6 +136,7 @@ public class PageCrawler extends RecursiveAction {
             finalizeIndexing();  // Ensure any cleanup or final processing is done
         }
     }
+
 
 
     private boolean shouldProcessUrl() {
@@ -292,8 +276,117 @@ public class PageCrawler extends RecursiveAction {
 
 
     private boolean isUrlWithinConfiguredSites(String url) {
+        // Проверяем, начинается ли URL с URL конфигурированного сайта
         return sitesList.getSites().stream()
                 .anyMatch(configSite -> url.startsWith(configSite.getUrl()));
+    }
+
+    private void processLinks(Document document) {
+        Elements links = document.select("a[href]");
+        List<PageCrawler> subtasks = new ArrayList<>();
+
+        for (Element link : links) {
+            if (!checkAndLogStopCondition("При обработке ссылок")) return;
+
+            String childUrl = link.absUrl("href");
+
+            // Проверяем, что ссылка принадлежит корневому сайту
+            if (!childUrl.startsWith(site.getUrl())) {
+                logger.debug("Ссылка {} находится за пределами корневого сайта. Пропускаем.", childUrl);
+                continue;
+            }
+
+            // Пропускаем ссылки на другие сайты
+            if (!isUrlWithinConfiguredSites(childUrl)) {
+                logger.debug("Ссылка {} не принадлежит конфигурированному сайту. Пропускаем.", childUrl);
+                continue;
+            }
+
+            // Обработка JavaScript ссылок
+            if (childUrl.startsWith("javascript:")) {
+                logger.info("Обнаружена JavaScript ссылка: {}", childUrl);
+                saveJavaScriptLink(childUrl);
+                continue;
+            }
+
+            // Обработка tel: ссылок
+            if (childUrl.startsWith("tel:")) {
+                logger.info("Обнаружена телефонная ссылка: {}", childUrl);
+                savePhoneLink(childUrl);
+                continue;
+            }
+
+            // Извлечение пути из URL
+            String childPath = null;
+            try {
+                URI childUri = new URI(childUrl);
+                childPath = childUri.getPath();
+            } catch (Exception e) {
+                logger.warn("Ошибка извлечения пути из URL: {}", childUrl);
+            }
+
+            // Добавление в очередь на обработку, если ссылка еще не была обработана
+            if (childPath != null) {
+                synchronized (visitedUrls) {
+                    if (!visitedUrls.contains(childPath)) {
+                        visitedUrls.add(childPath);
+                        subtasks.add(new PageCrawler(
+                                site,                          // Site object
+                                lemmaRepository,               // LemmaRepository object
+                                siteRepository,                // SiteRepository object
+                                indexRepository,               // IndexRepository object
+                                childUrl,                      // Starting URL for indexing
+                                visitedUrls,                   // Set of visited URLs
+                                pageRepository,                // PageRepository object
+                                indexingService,               // IndexingService object
+                                sitesList                      // SitesList object
+                        ));
+                        logger.debug("Добавлена ссылка в обработку: {}", childUrl);
+                    } else {
+                        logger.debug("Ссылка уже обработана: {}", childUrl);
+                    }
+                }
+            }
+        }
+
+        // Запуск подзадач
+        if (!subtasks.isEmpty()) {
+            invokeAll(subtasks);
+        }
+    }
+
+
+    private void savePhoneLink(String telUrl) {
+        String phoneNumber = telUrl.substring(4); // Убираем "tel:"
+        if (pageRepository.existsByPathAndSiteId(phoneNumber, site.getId())) {
+            logger.info("Телефонный номер {} уже сохранён. Пропускаем.", phoneNumber);
+            return;
+        }
+
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(phoneNumber);
+        page.setCode(0); // Код 0 для телефонных ссылок
+        page.setContent("Телефонный номер: " + phoneNumber);
+        pageRepository.save(page);
+
+        logger.info("Сохранён телефонный номер: {}", phoneNumber);
+    }
+
+    private void saveJavaScriptLink(String jsUrl) {
+        if (pageRepository.existsByPathAndSiteId(jsUrl, site.getId())) {
+            logger.info("JavaScript ссылка {} уже сохранена. Пропускаем.", jsUrl);
+            return;
+        }
+
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(jsUrl); // Сохраняем полный jsUrl как path
+        page.setCode(0); // Код 0 для JavaScript ссылок
+        page.setContent("JavaScript ссылка: " + jsUrl);
+        pageRepository.save(page);
+
+        logger.info("Сохранена JavaScript ссылка: {}", jsUrl);
     }
 
 }
