@@ -124,14 +124,19 @@ public class IndexingService {
                             siteRepository.save(newSite);
 
                             // Crawl and index the pages for the site
+                            // Make sure the SitesList instance is available
+                            SitesList sitesList = getSitesList();  // Replace with actual way to get SitesList
+
+
                             PageCrawler.startCrawling(
-                                    newSite,
-                                    site.getUrl(),
-                                    lemmaRepository,
-                                    siteRepository,
-                                    indexRepository,
-                                    pageRepository,
-                                    this  // Pass the current instance of IndexingService
+                                    newSite,                      // The new site to index
+                                    site.getUrl(),                 // URL to start from
+                                    lemmaRepository,               // LemmaRepository object
+                                    siteRepository,                // SiteRepository object
+                                    indexRepository,               // IndexRepository object
+                                    pageRepository,                // PageRepository object
+                                    this,                          // The current instance of IndexingService
+                                    sitesList                      // Pass SitesList as needed
                             );
 
                             if (indexingInProgress) {
@@ -164,6 +169,11 @@ public class IndexingService {
         }
     }
 
+    public SitesList getSitesList() {
+        return this.sitesList;
+    }
+
+
     private boolean isConfiguredSite(String url) {
         List<searchengine.config.ConfigSite> sites = sitesList.getSites();
         for (searchengine.config.ConfigSite site : sites) {
@@ -173,8 +183,6 @@ public class IndexingService {
         }
         return false;
     }
-
-
 
     @Transactional
     private void deleteSiteData(String siteUrl) {
@@ -235,8 +243,14 @@ public class IndexingService {
     }
 
     private void startIndexingForSite(String url) {
-        indexingTasks.put(url, true);
+        if (isConfiguredSite(url)) {
+            indexingTasks.put(url, true);
+            logger.info("Индексация начата для сайта: {}", url);
+        } else {
+            logger.warn("Сайт {} не найден в конфигурации, пропускаем индексацию.", url);
+        }
     }
+
 
     private void stopIndexingForSite(String url) {
         indexingTasks.remove(url);

@@ -8,7 +8,7 @@ import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
-
+import searchengine.config.SitesList;
 import java.io.IOException;
 import java.util.concurrent.ForkJoinPool;
 import searchengine.repository.SiteRepository;
@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
 import org.springframework.context.annotation.Lazy;
+import java.util.stream.Collectors;
 
 
 @Lazy
@@ -34,8 +35,11 @@ public class PageCrawler extends RecursiveAction {
     private final IndexRepository indexRepository;
     private final Set<String> visitedPages = new ConcurrentSkipListSet<>();
     private final SiteRepository siteRepository;
+    private final SitesList sitesList; // Add this field to store the list of configured sites
 
-    public PageCrawler(Site site,LemmaRepository lemmaRepository,SiteRepository siteRepository,IndexRepository indexRepository, String url, Set<String> visitedUrls, PageRepository pageRepository,@Lazy IndexingService indexingService) {
+    public PageCrawler(Site site, LemmaRepository lemmaRepository, SiteRepository siteRepository,
+                       IndexRepository indexRepository, String url, Set<String> visitedUrls,
+                       PageRepository pageRepository, IndexingService indexingService, SitesList sitesList) {
         this.site = site;
         this.url = url;
         this.visitedUrls = visitedUrls;
@@ -44,10 +48,12 @@ public class PageCrawler extends RecursiveAction {
         this.lemmaRepository = lemmaRepository;
         this.indexingService = indexingService;
         this.siteRepository = siteRepository;
+        this.sitesList = sitesList;  // Initialize the sitesList
     }
 
     @Override
     protected void compute() {
+        // Skip already visited pages or those that should be skipped
         if (!visitedPages.add(url) || shouldSkipUrl(url) || pageRepository.existsByPath(url.replace(site.getUrl(), ""))) {
             return;
         }
@@ -55,6 +61,7 @@ public class PageCrawler extends RecursiveAction {
         long startTime = System.currentTimeMillis();
 
         try {
+            // Add random delay to prevent overloading the server (simulate human behavior)
             long delay = 500 + (long) (Math.random() * 4500);
             try {
                 Thread.sleep(delay);
@@ -64,40 +71,47 @@ public class PageCrawler extends RecursiveAction {
                 return;
             }
 
+            // Update the site's status time
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
 
             logger.info("🌍 Загружаем страницу: {}", url);
 
+            // Fetch and parse the document using Jsoup
             Document document = Jsoup.connect(url)
                     .userAgent("Mozilla/5.0")
                     .referrer("http://www.google.com")
                     .ignoreContentType(true)
                     .get();
 
+            // Get response code and content type
             String contentType = document.connection().response().contentType();
             int responseCode = document.connection().response().statusCode();
 
+            // Create a new Page object for storing data
             Page page = new Page();
             page.setPath(url.replace(site.getUrl(), ""));
             page.setSite(site);
             page.setCode(responseCode);
 
+            // Store content and index files/images based on content type
             if (contentType.startsWith("text/html")) {
                 page.setContent(document.html());
-                indexFilesAndImages(document);
+                indexFilesAndImages(document);  // Process files/images if needed
             } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
-                page.setContent("FILE: " + url);
+                page.setContent("FILE: " + url);  // Mark the URL as a file
             }
 
+            // Save the page to the repository
             pageRepository.save(page);
 
-            // Теперь вызываем processPageContent через indexingService
+            // Process the page content using the indexing service
             indexingService.processPageContent(page);
 
             long endTime = System.currentTimeMillis();
             logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
 
+            // Extract links from the page and create new crawling tasks
             Elements links = document.select("a[href]");
             List<PageCrawler> subTasks = links.stream()
                     .map(link -> cleanUrl(link.absUrl("href")))
@@ -110,30 +124,33 @@ public class PageCrawler extends RecursiveAction {
                             link,
                             visitedUrls,
                             pageRepository,
-                            indexingService
+                            indexingService,
+                            sitesList // Ensure sitesList is passed here
                     ))
-                    .toList();
+                    .collect(Collectors.toList());  // Collect the tasks in a list
 
             logger.info("🔗 Найдено ссылок: {}", subTasks.size());
-            invokeAll(subTasks);
+            invokeAll(subTasks);  // Invoke all the subtasks concurrently
 
         } catch (IOException e) {
             handleException("❌ Ошибка при загрузке", e);
         }
 
         try {
+            // Ensure URL processing logic is handled properly
             if (!shouldProcessUrl()) return;
 
             if (!checkAndLogStopCondition("Перед запросом")) return;
 
+            // Fetch page content and process the response
             Connection.Response response = fetchPageContent();
             if (response != null) {
-                // Удален вызов handleResponse(response)
+                // Removed the unused handleResponse(response) call
             }
         } catch (IOException e) {
             handleException(e);
         } finally {
-            finalizeIndexing();
+            finalizeIndexing();  // Ensure any cleanup or final processing is done
         }
     }
 
@@ -237,25 +254,46 @@ public class PageCrawler extends RecursiveAction {
         return url.replaceAll("#.*", "").replaceAll("\\?.*", "");
     }
 
-    private boolean shouldSkipUrl(String url) {
-        return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
-    }
 
     public static void startCrawling(Site site, String startUrl,
                                      LemmaRepository lemmaRepository,
                                      SiteRepository siteRepository,
                                      IndexRepository indexRepository,
                                      PageRepository pageRepository,
-                                     IndexingService indexingService) {  // Добавляем параметр
+                                     IndexingService indexingService,
+                                     SitesList sitesList) {
+
         ForkJoinPool forkJoinPool = new ForkJoinPool();
         try {
+            // Invoke PageCrawler with necessary parameters, including SitesList and IndexingService
             forkJoinPool.invoke(new PageCrawler(
-                    site, lemmaRepository, siteRepository, indexRepository,
-                    startUrl, new HashSet<>(), pageRepository, indexingService // Передаём indexingService
+                    site,                          // Site object
+                    lemmaRepository,               // LemmaRepository object
+                    siteRepository,                // SiteRepository object
+                    indexRepository,               // IndexRepository object
+                    startUrl,                      // Starting URL for indexing
+                    new HashSet<>(),               // Set of visited URLs
+                    pageRepository,                // PageRepository object
+                    indexingService,               // IndexingService object (for isInternalLink)
+                    sitesList                      // SitesList object
             ));
         } finally {
             forkJoinPool.shutdown();
         }
+    }
+
+    private boolean shouldSkipUrl(String url) {
+        if (!isUrlWithinConfiguredSites(url)) {
+            logger.info("URL skipped (not part of configured sites): {}", url);
+            return true;  // Skip URLs not belonging to the configured sites
+        }
+        return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
+    }
+
+
+    private boolean isUrlWithinConfiguredSites(String url) {
+        return sitesList.getSites().stream()
+                .anyMatch(configSite -> url.startsWith(configSite.getUrl()));
     }
 
 }

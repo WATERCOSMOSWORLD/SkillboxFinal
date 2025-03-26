@@ -70,7 +70,8 @@ public class PageIndexingService {
                     baseUrl,                       // URL для индексации
                     new HashSet<>(),               // множество посещенных URL
                     pageRepository,                // объект PageRepository
-                    indexingService                // объект IndexingService
+                    indexingService,               // объект IndexingService
+                    sitesList                      // передаем список сайтов
             ));
 
             site.setStatus(IndexingStatus.INDEXED);
