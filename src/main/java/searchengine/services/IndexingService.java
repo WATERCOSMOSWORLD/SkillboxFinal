@@ -7,6 +7,7 @@ import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import java.util.stream.Collectors;
 
 import org.springframework.transaction.annotation.Propagation;
 import searchengine.config.SitesList;
@@ -274,7 +275,6 @@ public class IndexingService {
             String text = extractTextFromHtml(page.getContent());
             Map<String, Integer> lemmas = lemmatizeText(text);
 
-            // Используем Map, чтобы избежать повторных запросов в БД
             Map<String, Lemma> lemmaCache = new HashMap<>();
             List<Lemma> lemmasToSave = new ArrayList<>();
             List<Index> indexesToSave = new ArrayList<>();
@@ -283,45 +283,49 @@ public class IndexingService {
                 String lemmaText = entry.getKey();
                 int count = entry.getValue();
 
-                // Проверяем, есть ли лемма в кэше (из базы или уже добавленная в текущем процессе)
                 Lemma lemma = lemmaCache.get(lemmaText);
                 if (lemma != null) {
                     lemma.setFrequency(lemma.getFrequency() + count);
                     continue;
                 }
 
-                // Ищем лемму в базе данных
                 Optional<Lemma> existingLemmaOpt = lemmaRepository.findByLemmaAndSite(lemmaText, page.getSite());
                 if (existingLemmaOpt.isPresent()) {
                     lemma = existingLemmaOpt.get();
                     lemma.setFrequency(lemma.getFrequency() + count);
                 } else {
-                    // Создаём новую лемму
                     lemma = new Lemma(null, page.getSite(), lemmaText, count);
                     lemmasToSave.add(lemma);
                 }
                 lemmaCache.put(lemmaText, lemma);
             }
 
-            // Добавляем индексы
             for (Map.Entry<String, Integer> entry : lemmas.entrySet()) {
                 Lemma lemma = lemmaCache.get(entry.getKey());
                 indexesToSave.add(new Index(null, page, lemma, (float) entry.getValue()));
             }
 
-            // Сохраняем обновленные или новые леммы и индексы
             if (!lemmasToSave.isEmpty()) {
+                logger.info("📌 Сохраняем новые леммы: {}", lemmasToSave.stream()
+                        .map(Lemma::getLemma)
+                        .collect(Collectors.joining(", ")));
                 lemmaRepository.saveAll(lemmasToSave);
             }
+
             if (!indexesToSave.isEmpty()) {
+                logger.info("📌 Сохраняем индексы для лемм: {}", indexesToSave.stream()
+                        .map(index -> index.getLemma().getLemma())
+                        .collect(Collectors.joining(", ")));
                 indexRepository.saveAll(indexesToSave);
             }
+
         } catch (IOException e) {
             logger.error("❌ Ошибка при обработке страницы: {}", page.getPath(), e);
         } catch (Exception e) {
             logger.error("Ошибка при обработке лемм и индексов: {}", e.getMessage(), e);
         }
     }
+
 
 
     private String extractTextFromHtml(String html) {
