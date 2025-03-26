@@ -1,6 +1,5 @@
 package searchengine.services;
 
-import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import java.net.URI;
@@ -79,100 +78,51 @@ public class PageCrawler extends RecursiveAction {
             logger.info("🌍 Загружаем страницу: {}", url);
 
             // Fetch and parse the document using Jsoup
-            Document document = Jsoup.connect(url)
-                    .userAgent("Mozilla/5.0")
-                    .referrer("http://www.google.com")
-                    .ignoreContentType(true)
-                    .get();
+            try {
+                Document document = Jsoup.connect(url)
+                        .userAgent("Mozilla/5.0")
+                        .referrer("http://www.google.com")
+                        .ignoreContentType(true)
+                        .timeout(10000) // Set timeout to 10 seconds
+                        .get();
 
-            // Get response code and content type
-            String contentType = document.connection().response().contentType();
-            int responseCode = document.connection().response().statusCode();
+                // Get response code and content type
+                String contentType = document.connection().response().contentType();
+                int responseCode = document.connection().response().statusCode();
 
-            // Create a new Page object for storing data
-            Page page = new Page();
-            page.setPath(url.replace(site.getUrl(), ""));
-            page.setSite(site);
-            page.setCode(responseCode);
+                // Create a new Page object for storing data
+                Page page = new Page();
+                page.setPath(url.replace(site.getUrl(), ""));
+                page.setSite(site);
+                page.setCode(responseCode);
 
-            // Store content and index files/images based on content type
-            if (contentType.startsWith("text/html")) {
-                page.setContent(document.html());
-                indexFilesAndImages(document);  // Process files/images if needed
-            } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
-                page.setContent("FILE: " + url);  // Mark the URL as a file
+                // Store content and index files/images based on content type
+                if (contentType.startsWith("text/html")) {
+                    page.setContent(document.html());
+                    indexFilesAndImages(document);  // Process files/images if needed
+                } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
+                    page.setContent("FILE: " + url);  // Mark the URL as a file
+                }
+
+                // Save the page to the repository
+                pageRepository.save(page);
+
+                // Process the page content using the indexing service
+                indexingService.processPageContent(page);
+
+                long endTime = System.currentTimeMillis();
+                logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
+
+                // Process the links from the page (instead of manually extracting and processing links)
+                processLinks(document);  // Call processLinks here to handle the link extraction and further task creation
+
+            } catch (IOException e) {
+                logger.warn("⚠️ Тайм-аут при загрузке: {}. Пропускаем.", url);
             }
 
-            // Save the page to the repository
-            pageRepository.save(page);
-
-            // Process the page content using the indexing service
-            indexingService.processPageContent(page);
-
-            long endTime = System.currentTimeMillis();
-            logger.info("✅ [{}] Проиндексировано за {} мс: {}", responseCode, (endTime - startTime), url);
-
-            // Process the links from the page (instead of manually extracting and processing links)
-            processLinks(document);  // Call processLinks here to handle the link extraction and further task creation
-
-        } catch (IOException e) {
-            handleException("❌ Ошибка при загрузке", e);
-        }
-
-        try {
-            // Ensure URL processing logic is handled properly
-            if (!shouldProcessUrl()) return;
-
-            if (!checkAndLogStopCondition("Перед запросом")) return;
-
-            // Fetch page content and process the response
-            Connection.Response response = fetchPageContent();
-            if (response != null) {
-                // Removed the unused handleResponse(response) call
-            }
-        } catch (IOException e) {
-            handleException(e);
         } finally {
             finalizeIndexing();  // Ensure any cleanup or final processing is done
         }
-    }
-
-
-
-    private boolean shouldProcessUrl() {
-        return checkAndLogStopCondition("Начало обработки") && markUrlAsVisited();
-    }
-
-    private void handleException(Exception e) {
-        if (e instanceof InterruptedException) {
-            Thread.currentThread().interrupt();
-        }
-        handleError(new IOException("Ошибка при обработке страницы", e));
-    }
-
-    private boolean markUrlAsVisited() {
-        synchronized (visitedUrls) {
-            if (visitedUrls.contains(url)) {
-                logger.debug("URL уже обработан: {}", url);
-                return false;
-            }
-            visitedUrls.add(url);
-        }
-        return true;}
-
-    private Connection.Response fetchPageContent() throws IOException {
-        logger.info("Обработка URL: {}", url);
-        Connection.Response response = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                .referrer("http://www.google.com")
-                .ignoreContentType(true)
-                .execute();
-
-        if (response.statusCode() >= 400) {
-            logger.warn("Ошибка {} при индексации страницы {}", response.statusCode(), url);
-            return null;
-        }
-        return response;
     }
 
     private void finalizeIndexing() {
@@ -180,15 +130,6 @@ public class PageCrawler extends RecursiveAction {
         logger.info("Индексация завершена для URL: {}", url);
     }
 
-    private void handleError(IOException e) {
-        logger.warn("Ошибка обработки URL {}: {}", url, e.getMessage());
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(url);
-        page.setCode(0);
-        page.setContent("Ошибка обработки: " + e.getMessage());
-        pageRepository.save(page);
-    }
 
     private boolean checkAndLogStopCondition(String stage) {
         if (!indexingService.isIndexingInProgress()) {
@@ -216,6 +157,11 @@ public class PageCrawler extends RecursiveAction {
     }
 
     private void saveMedia(String url, String type) {
+        if (shouldSkipUrl(url)) {
+            logger.info("🚨 Медиа-ссылка {} пропущена (фильтр URL)", url);
+            return;
+        }
+
         Page mediaPage = new Page();
         mediaPage.setPath(url.replace(site.getUrl(), ""));
         mediaPage.setSite(site);
@@ -226,13 +172,6 @@ public class PageCrawler extends RecursiveAction {
         logger.info("📂 Добавлен {}: {}", type, url);
     }
 
-    private void handleException(String message, Exception e) {
-        logger.error("{} {}: {}", message, url, e.getMessage(), e);
-        site.setStatus(IndexingStatus.FAILED);
-        site.setStatusTime(LocalDateTime.now());
-        site.setLastError(message + " " + url + ": " + e.getMessage());
-        siteRepository.save(site);
-    }
 
     private String cleanUrl(String url) {
         return url.replaceAll("#.*", "").replaceAll("\\?.*", "");
@@ -268,12 +207,31 @@ public class PageCrawler extends RecursiveAction {
 
     private boolean shouldSkipUrl(String url) {
         if (!isUrlWithinConfiguredSites(url)) {
-            logger.info("URL skipped (not part of configured sites): {}", url);
-            return true;  // Skip URLs not belonging to the configured sites
+            logger.info("URL пропущен (не относится к конфигурированным сайтам): {}", url);
+            return true;
         }
+
+        // Фильтр рекламных ссылок (utm, ad, track, banner, promo и др.)
+        if (url.matches(".*(utm_|clickid=|affid=|ref=|ad=|track=|banner=|promo=|partner=|campaign=|source=).*")) {
+            logger.info("⛔ URL пропущен (рекламная ссылка): {}", url);
+            return true;
+        }
+
+        // Фильтр рекламных сервисов (Яндекс Метрика, Google Analytics, DoubleClick и др.)
+        List<String> blockedDomains = Arrays.asList(
+                "mc.yandex.ru", "google-analytics.com", "doubleclick.net",
+                "adservice.google.com", "googletagmanager.com", "vk.com/rtrg"
+        );
+        for (String domain : blockedDomains) {
+            if (url.contains(domain)) {
+                logger.info("🚫 URL пропущен (подозрительный рекламный домен): {}", url);
+                return true;
+            }
+        }
+
+        // Пропуск ненужных разделов сайтов (корзина, оформление заказа и т. д.)
         return url.contains("/basket") || url.contains("/cart") || url.contains("/checkout");
     }
-
 
     private boolean isUrlWithinConfiguredSites(String url) {
         // Проверяем, начинается ли URL с URL конфигурированного сайта
