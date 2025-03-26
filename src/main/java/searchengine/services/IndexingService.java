@@ -109,42 +109,45 @@ public class IndexingService {
         executorService = Executors.newFixedThreadPool(sites.size());
         try {
             for (searchengine.config.ConfigSite site : sites) {
-                executorService.submit(() -> {
-                    logger.info("Индексация сайта: {} ({})", site.getName(), site.getUrl());
-                    startIndexingForSite(site.getUrl()); // Добавляем сайт в активные задачи
-                    try {
-                        deleteSiteData(site.getUrl());
-                        searchengine.model.Site newSite = new searchengine.model.Site();
-                        newSite.setName(site.getName());
-                        newSite.setUrl(site.getUrl());
-                        newSite.setStatus(IndexingStatus.INDEXING);
-                        newSite.setStatusTime(LocalDateTime.now());
-                        siteRepository.save(newSite);
+                // Ensure we only index sites from the configured list
+                if (isConfiguredSite(site.getUrl())) {
+                    executorService.submit(() -> {
+                        logger.info("Индексация сайта: {} ({})", site.getName(), site.getUrl());
+                        startIndexingForSite(site.getUrl()); // Add the site to active tasks
+                        try {
+                            deleteSiteData(site.getUrl());
+                            searchengine.model.Site newSite = new searchengine.model.Site();
+                            newSite.setName(site.getName());
+                            newSite.setUrl(site.getUrl());
+                            newSite.setStatus(IndexingStatus.INDEXING);
+                            newSite.setStatusTime(LocalDateTime.now());
+                            siteRepository.save(newSite);
 
-                        // Вместо crawlAndIndexPages вызываем startCrawling
-                        PageCrawler.startCrawling(
-                                newSite,
-                                site.getUrl(),
-                                lemmaRepository,
-                                siteRepository,
-                                indexRepository,
-                                pageRepository,
-                                this  // Передаём текущий экземпляр IndexingService
-                        );
+                            // Crawl and index the pages for the site
+                            PageCrawler.startCrawling(
+                                    newSite,
+                                    site.getUrl(),
+                                    lemmaRepository,
+                                    siteRepository,
+                                    indexRepository,
+                                    pageRepository,
+                                    this  // Pass the current instance of IndexingService
+                            );
 
-
-
-                        if (indexingInProgress) {
-                            updateSiteStatusToIndexed(newSite);
-                        } else {
-                            logger.warn("Индексация была прервана. Статус сайта {} не обновлен на INDEXED.", site.getName());
+                            if (indexingInProgress) {
+                                updateSiteStatusToIndexed(newSite);
+                            } else {
+                                logger.warn("Индексация была прервана. Статус сайта {} не обновлен на INDEXED.", site.getName());
+                            }
+                        } catch (Exception e) {
+                            handleIndexingError(site.getUrl(), e);
+                        } finally {
+                            stopIndexingForSite(site.getUrl()); // Remove the site from active tasks
                         }
-                    } catch (Exception e) {
-                        handleIndexingError(site.getUrl(), e);
-                    } finally {
-                        stopIndexingForSite(site.getUrl()); // Удаляем сайт из активных задач
-                    }
-                });
+                    });
+                } else {
+                    logger.warn("Сайт {} не найден в конфигурации для индексации, пропускаем.", site.getUrl());
+                }
             }
         } finally {
             executorService.shutdown();
@@ -159,6 +162,16 @@ public class IndexingService {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private boolean isConfiguredSite(String url) {
+        List<searchengine.config.ConfigSite> sites = sitesList.getSites();
+        for (searchengine.config.ConfigSite site : sites) {
+            if (site.getUrl().equals(url)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
