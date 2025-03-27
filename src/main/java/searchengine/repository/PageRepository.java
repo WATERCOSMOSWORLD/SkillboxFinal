@@ -6,8 +6,10 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Modifying;
 import searchengine.model.Page;
+import searchengine.model.Site;
 import org.springframework.data.repository.query.Param;
 import java.util.List;
+import java.util.Optional;
 
 
 @Repository
@@ -35,4 +37,8 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
 
     int countBySiteUrl(String siteUrl);
+
+
+
+    Optional<Page> findByPathAndSite(String path, Site site);
 }

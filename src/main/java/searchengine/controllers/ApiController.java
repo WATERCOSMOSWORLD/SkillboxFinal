@@ -8,14 +8,14 @@ import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.IndexingService;
 import searchengine.services.StatisticsService;
 import org.springframework.web.bind.annotation.PostMapping;
+
 import org.springframework.web.bind.annotation.RequestParam ;
-import searchengine.services.PageIndexingService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
+
 import searchengine.services.SearchService;
 import searchengine.dto.search.SearchResponse;
 import org.springframework.context.annotation.Lazy;
@@ -30,14 +30,12 @@ public class ApiController {
     @Lazy
     private final IndexingService indexingService;
     private final ExecutorService executorService;
-    private final PageIndexingService pageIndexingService;  // Исправленное имя переменной
     private final SearchService searchService;
 
-    public ApiController(@Lazy StatisticsService statisticsService,SearchService searchService,@Lazy PageIndexingService pageIndexingService,@Lazy IndexingService indexingService, ExecutorService executorService) {
+    public ApiController(@Lazy StatisticsService statisticsService,SearchService searchService,@Lazy IndexingService indexingService, ExecutorService executorService) {
         this.statisticsService = statisticsService;
         this.indexingService = indexingService;
         this.executorService = executorService;
-        this.pageIndexingService = pageIndexingService;
         this.searchService = searchService;
     }
 
@@ -80,33 +78,6 @@ public class ApiController {
         return ResponseEntity.ok(successResponse);
     }
 
-    @PostMapping("/indexPage")
-    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
-        Map<String, Object> response = new HashMap<>();
-
-        if (url == null || url.trim().isEmpty()) {
-            response.put("result", false);
-            response.put("error", "URL не должен быть пустым");
-            return ResponseEntity.badRequest().body(response);
-        }
-
-        try {
-            boolean success = pageIndexingService.indexPage(url);
-            if (success) {
-                response.put("result", true);
-            } else {
-                response.put("result", false);
-                response.put("error", "Не удалось индексировать страницу");
-            }
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            logger.error("Ошибка индексации страницы {}: {}", url, e.getMessage(), e);
-            response.put("result", false);
-            response.put("error", "Внутренняя ошибка сервера");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        }
-    }
-
     @GetMapping("/search")
     public ResponseEntity<SearchResponse> search(
             @RequestParam String query,
@@ -128,4 +99,29 @@ public class ApiController {
                     .body(new SearchResponse("Ошибка при выполнении поиска"));
         }
     }
+
+
+    @PostMapping("/indexPage")
+    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
+        Map<String, Object> response = new HashMap<>();
+
+        if (!indexingService.isUrlValid(url)) {
+            response.put("result", false);
+            response.put("error", "Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        try {
+            indexingService.indexPage(url);
+            response.put("result", true);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Ошибка при индексации страницы: {}", e.getMessage(), e);
+            response.put("result", false);
+            response.put("error", "Ошибка при индексации страницы");
+            return ResponseEntity.internalServerError().body(response);
+        }
+    }
+
+
 }

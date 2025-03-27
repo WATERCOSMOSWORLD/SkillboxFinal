@@ -100,21 +100,6 @@ public class PageCrawler extends RecursiveAction {
                 String contentType = document.connection().response().contentType();
                 int responseCode = document.connection().response().statusCode();
 
-                Page page = new Page();
-                page.setPath(url.replace(site.getUrl(), ""));
-                page.setSite(site);
-                page.setCode(responseCode);
-
-                if (contentType.startsWith("text/html")) {
-                    page.setContent(document.html());
-                    indexFilesAndImages(document);
-                } else if (contentType.startsWith("image/") || contentType.startsWith("application/")) {
-                    page.setContent("FILE: " + url);
-                }
-
-                pageRepository.save(page);
-                indexingService.processPageContent(page);
-
                 long endTime = System.currentTimeMillis();
                 logger.info("✅ [{}] Проиндексировано за {} мс (глубина {}): {}",
                         responseCode, (endTime - startTime), depth, url);
@@ -329,8 +314,6 @@ public class PageCrawler extends RecursiveAction {
             invokeAll(subtasks);
         }
     }
-
-
 
     private void savePhoneLink(String telUrl) {
         String phoneNumber = telUrl.substring(4); // Убираем "tel:"
