@@ -49,7 +49,8 @@ public class PageIndexingService {
                 return false;
             }
 
-            deleteSiteData(baseUrl);
+            // Вызов метода deleteSiteData из IndexingService
+            indexingService.deleteSiteData(baseUrl);
 
             site = new Site();
             site.setUrl(baseUrl);
@@ -75,7 +76,6 @@ public class PageIndexingService {
                     0                               // <-- Начальная глубина (0)
             ));
 
-
             site.setStatus(IndexingStatus.INDEXED);
             site.setStatusTime(LocalDateTime.now());
             site.setLastError(null);
@@ -98,28 +98,8 @@ public class PageIndexingService {
         }
     }
 
-    @Transactional
-    private void deleteSiteData(String siteUrl) {
-        searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
-        if (site != null) {
-            Long siteId = (long) site.getId();
 
-            int indexesDeleted = indexRepository.deleteBySiteId(site.getId());
 
-            int lemmasDeleted = lemmaRepository.deleteBySiteId(siteId);
-
-            int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
-
-            siteRepository.delete(site);
-
-            logger.info("Удалено {} записей из таблицы index.", indexesDeleted);
-            logger.info("Удалено {} записей из таблицы lemma.", lemmasDeleted);
-            logger.info("Удалено {} записей из таблицы page для сайта {}.", pagesDeleted, siteUrl);
-            logger.info("Сайт {} успешно удален.", siteUrl);
-        } else {
-            logger.warn("Сайт {} не найден в базе данных.", siteUrl);
-        }
-    }
 
     private ConfigSite getConfigSiteByUrl(String url) {
         return sitesList.getSites().stream()
