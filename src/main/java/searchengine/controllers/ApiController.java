@@ -80,6 +80,31 @@ public class ApiController {
         return ResponseEntity.ok(successResponse);
     }
 
+
+    @GetMapping("/search")
+    public ResponseEntity<SearchResponse> search(
+            @RequestParam String query,
+            @RequestParam(required = false) String site,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit) {
+
+        if (query == null || query.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(new SearchResponse("Задан пустой поисковый запрос"));
+        }
+
+        try {
+            SearchResponse searchResponse = searchService.search(query, site, offset, limit);
+            return ResponseEntity.ok(searchResponse);
+        } catch (Exception e) {
+            logger.error("Ошибка выполнения поиска: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(new SearchResponse("Ошибка при выполнении поиска"));
+        }
+    }
+
+
+
     @PostMapping("/indexPage")
     public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
         Map<String, Object> response = new HashMap<>();
@@ -104,28 +129,6 @@ public class ApiController {
             response.put("result", false);
             response.put("error", "Внутренняя ошибка сервера");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        }
-    }
-
-    @GetMapping("/search")
-    public ResponseEntity<SearchResponse> search(
-            @RequestParam String query,
-            @RequestParam(required = false) String site,
-            @RequestParam(defaultValue = "0") int offset,
-            @RequestParam(defaultValue = "20") int limit) {
-
-        if (query == null || query.trim().isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(new SearchResponse("Задан пустой поисковый запрос"));
-        }
-
-        try {
-            SearchResponse searchResponse = searchService.search(query, site, offset, limit);
-            return ResponseEntity.ok(searchResponse);
-        } catch (Exception e) {
-            logger.error("Ошибка выполнения поиска: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError()
-                    .body(new SearchResponse("Ошибка при выполнении поиска"));
         }
     }
 }

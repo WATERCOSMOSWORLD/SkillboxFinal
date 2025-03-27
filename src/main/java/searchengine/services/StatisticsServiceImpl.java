@@ -33,8 +33,6 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Lazy
     private final IndexingService indexingService;
 
-    private static final String SITE_NOT_FOUND_ERROR = "Сайт отсутствует в базе данных";
-
     @Override
     public StatisticsResponse getStatistics() {
         TotalStatistics total = new TotalStatistics();
@@ -68,19 +66,15 @@ public class StatisticsServiceImpl implements StatisticsService {
         item.setName(siteConfig.getName());
         item.setUrl(siteConfig.getUrl());
 
-        siteRepository.findFirstByUrl(siteConfig.getUrl())
-                .ifPresentOrElse(
-                        site -> populateSiteStatistics(item, site),
-                        () -> {
-                            item.setStatus("FAILED");
-                            item.setError(SITE_NOT_FOUND_ERROR);
-                            item.setStatusTime(System.currentTimeMillis());
-                            logger.error("Сайт не найден в базе данных: {}", siteConfig.getUrl());
-                        }
-                );
+        // Убираем проверку наличия сайта в базе данных
+        item.setStatus("UNKNOWN"); // Можно установить другое значение по умолчанию
+        item.setStatusTime(System.currentTimeMillis());
+        item.setPages(0);
+        item.setLemmas(0);
 
         return item;
     }
+
 
     private void populateSiteStatistics(DetailedStatisticsItem item, Site site) {
         updateSiteStatusIfNeeded(site);
