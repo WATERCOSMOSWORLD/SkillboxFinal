@@ -8,15 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.stream.Collectors;
-import java.io.IOException;
 
 import org.springframework.transaction.annotation.Propagation;
 import searchengine.config.SitesList;
 import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import java.util.concurrent.ConcurrentSkipListSet;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import searchengine.repository.LemmaRepository;
@@ -25,7 +24,7 @@ import searchengine.repository.IndexRepository;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
-
+import java.util.concurrent.TimeUnit;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.context.annotation.Lazy;
@@ -42,11 +41,10 @@ public class IndexingService {
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
-    private final Set<String> visitedUrls = new ConcurrentSkipListSet<>();
-    private ForkJoinPool forkJoinPool = new ForkJoinPool();
 
     private volatile boolean indexingInProgress = false;
     private ExecutorService executorService;
+    private ForkJoinPool forkJoinPool;
 
     public IndexingService(SitesList sitesList,LemmaRepository lemmaRepository, IndexRepository indexRepository, SiteRepository siteRepository,  PageRepository pageRepository ) {
         this.sitesList = sitesList;
@@ -110,6 +108,7 @@ public class IndexingService {
             return;
         }
 
+        executorService = Executors.newFixedThreadPool(sites.size());
         try {
             for (searchengine.config.ConfigSite site : sites) {
                 if (!indexingInProgress) {
@@ -163,14 +162,26 @@ public class IndexingService {
                     logger.warn("Сайт {} не найден в конфигурации для индексации, пропускаем.", site.getUrl());
                 }
             }
-        } catch (Exception e) {
-            logger.error("Ошибка в процессе индексации: {}", e.getMessage());
+        } finally {
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(1, TimeUnit.HOURS)) {
+                    executorService.shutdownNow();
+                    logger.error("Превышено время ожидания завершения индексации.");
+                }
+            } catch (InterruptedException e) {
+                executorService.shutdownNow();
+                logger.error("Индексация была прервана: {}", e.getMessage());
+                Thread.currentThread().interrupt();
+            }
         }
     }
+
 
     public SitesList getSitesList() {
         return this.sitesList;
     }
+
 
     private boolean isConfiguredSite(String url) {
         List<searchengine.config.ConfigSite> sites = sitesList.getSites();
@@ -183,7 +194,7 @@ public class IndexingService {
     }
 
     @Transactional
-    public void deleteSiteData(String siteUrl) {
+    private void deleteSiteData(String siteUrl) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
         if (site != null) {
             Long siteId = (long) site.getId();
@@ -248,6 +259,7 @@ public class IndexingService {
             logger.warn("Сайт {} не найден в конфигурации, пропускаем индексацию.", url);
         }
     }
+
 
     private void stopIndexingForSite(String url) {
         indexingTasks.remove(url);
@@ -322,6 +334,8 @@ public class IndexingService {
         }
     }
 
+
+
     private String extractTextFromHtml(String html) {
         return Jsoup.parse(html).text();
     }
@@ -354,24 +368,4 @@ public class IndexingService {
 
         return lemmaFrequencies;
     }
-
-
-
-    public boolean isUrlValid(String url) {
-        List<String> allowedSites = List.of(
-                "https://www.ipfran.ru",
-                "https://www.playback.ru"
-        );
-
-        return allowedSites.stream().anyMatch(url::startsWith);
-    }
-
-    // Запускает индексацию конкретной страницы
-    public void indexPage(String url) {
-        // Реализация индексации страницы
-        System.out.println("Индексация страницы: " + url);
-        // Здесь можно добавить логику для обновления данных в базе
-    }
-
-
 }

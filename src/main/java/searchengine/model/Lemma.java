@@ -37,5 +37,4 @@ public class Lemma {
     @Column(name = "frequency", nullable = false)
     private Integer frequency = 1; // По умолчанию 1, чтобы избежать NULL
 
-
 }

@@ -3,6 +3,7 @@ package searchengine.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import searchengine.model.Site;
+import searchengine.model.Page;
 import searchengine.model.IndexingStatus;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -21,5 +22,5 @@ public interface SiteRepository extends JpaRepository<Site,List> {
     @Transactional
     void delete(Site site);
 
-
+    Optional<Site> findByUrlStartingWith(String url);
 }
