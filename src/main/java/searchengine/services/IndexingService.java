@@ -8,19 +8,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.stream.Collectors;
-
 import org.springframework.transaction.annotation.Propagation;
 import searchengine.config.SitesList;
 import searchengine.model.*;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.IndexRepository;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
@@ -99,8 +96,6 @@ public class IndexingService {
         updateSitesStatusToFailed("Индексация остановлена пользователем");
     }
 
-
-
     private void performIndexing() {
         List<searchengine.config.ConfigSite> sites = sitesList.getSites();
         if (sites == null || sites.isEmpty()) {
@@ -177,11 +172,9 @@ public class IndexingService {
         }
     }
 
-
     public SitesList getSitesList() {
         return this.sitesList;
     }
-
 
     private boolean isConfiguredSite(String url) {
         List<searchengine.config.ConfigSite> sites = sitesList.getSites();
@@ -228,7 +221,6 @@ public class IndexingService {
         logger.info("Сайт {} изменил статус на INDEXED.", site.getUrl());
     }
 
-
     private void handleIndexingError(String siteUrl, Exception e) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
         if (site != null) {
@@ -259,7 +251,6 @@ public class IndexingService {
             logger.warn("Сайт {} не найден в конфигурации, пропускаем индексацию.", url);
         }
     }
-
 
     private void stopIndexingForSite(String url) {
         indexingTasks.remove(url);
@@ -334,12 +325,9 @@ public class IndexingService {
         }
     }
 
-
-
     private String extractTextFromHtml(String html) {
         return Jsoup.parse(html).text();
     }
-
 
     private Map<String, Integer> lemmatizeText(String text) throws IOException {
         Map<String, Integer> lemmaFrequencies = new HashMap<>();
