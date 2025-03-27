@@ -40,5 +40,5 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
 
 
-    Optional<Page> findBySiteAndPath(Site site, String path);
+
 }
