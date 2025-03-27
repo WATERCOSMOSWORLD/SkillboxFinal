@@ -134,6 +134,7 @@ public class PageCrawler extends RecursiveAction {
     }
 
 
+
     private void finalizeIndexing() {
         indexingService.checkAndUpdateStatus(site.getUrl());
         logger.info("Индексация завершена для URL: {}", url);
