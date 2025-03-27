@@ -331,8 +331,6 @@ public class PageCrawler extends RecursiveAction {
         }
     }
 
-
-
     private void savePhoneLink(String telUrl) {
         String phoneNumber = telUrl.substring(4); // Убираем "tel:"
         if (pageRepository.existsByPathAndSiteId(phoneNumber, site.getId())) {
